@@ -59,66 +59,6 @@ function loadProfile() {
 let MENUS = {};
 let menuMeta = { updatedAt: null, ready: false, loading: false };
 
-async function loadMenus(refresh = false) {
-  if (menuMeta.loading) return;
-  if (!refresh && menuMeta.ready) return;
-  menuMeta.loading = true;
-  const el = document.getElementById('menuSync');
-  if (el) el.textContent = '식단 불러오는 중…';
-  try {
-    const res = await fetch('/api/menus' + (refresh ? '?refresh=1' : ''));
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || '식단 API 오류');
-    MENUS = data.MENUS || {};
-    menuMeta.updatedAt = data.updatedAt;
-    menuMeta.ready = Object.keys(MENUS).length > 0;
-    if (el) {
-      const t = menuMeta.updatedAt
-        ? new Date(menuMeta.updatedAt).toLocaleString('ko-KR', {
-            month: 'numeric',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          })
-        : '';
-      el.textContent = menuMeta.ready ? `식단 연동 · ${t}` : '식단 일부만 로드됨';
-    }
-    if (lastData) drawFood();
-  } catch (e) {
-    if (el) el.textContent = '식단 연동 실패';
-    showToast('공식 식단을 불러오지 못했어요');
-    console.error(e);
-  } finally {
-    menuMeta.loading = false;
-  }
-}
-
-async function ensureMenus() {
-  if (!menuMeta.ready && !menuMeta.loading) await loadMenus();
-}
-
-/* ════════════════════════════ TIME / WEATHER ════ */
-function tick() {
-  const n = typeof KST !== 'undefined' ? KST.now() : new Date(),
-    d = ['일', '월', '화', '수', '목', '금', '토'][n.getDay()];
-  document.getElementById('nowTime').textContent =
-    `${d}요일 ${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`;
-}
-tick();
-setInterval(tick, 30000);
-
-const WX = [
-  { i: '☀️', l: '맑음 18°' },
-  { i: '⛅', l: '구름 15°' },
-  { i: '☁️', l: '흐림 13°' },
-  { i: '🌧️', l: '비 11°' },
-];
-const ww = WX[new Date().getDay() % WX.length];
-document.getElementById('wIco').textContent = ww.i;
-document.getElementById('wLbl').textContent = ww.l;
-loadMenus();
-loadCampusSchedule();
-
 /* ════════════════════════════ CAMPUS SCHEDULE / CROWD ════ */
 let CAMPUS_SCHEDULE = null;
 
@@ -139,8 +79,13 @@ async function loadCampusSchedule() {
   if (CAMPUS_SCHEDULE) return;
   try {
     const res = await fetch('/data/campus_schedule.json');
-    CAMPUS_SCHEDULE = await res.json();
+    if (!res.ok) throw new Error(`schedule HTTP ${res.status}`);
+    const data = await res.json();
+    CAMPUS_SCHEDULE = Object.fromEntries(
+      Object.entries(data).filter(([k]) => /^[1-5]$/.test(String(k))),
+    );
   } catch (e) {
+    console.warn('[campus_schedule]', e.message || e);
     CAMPUS_SCHEDULE = {};
   }
 }
@@ -195,6 +140,77 @@ function getDynamicCrowd(restaurantKey) {
 
   return Math.min(95, Math.max(5, Math.round((CROWD_BASE[restaurantKey] || 40) + crowdBonus)));
 }
+
+async function loadMenus(refresh = false) {
+  if (menuMeta.loading) return;
+  if (!refresh && menuMeta.ready) return;
+  menuMeta.loading = true;
+  const el = document.getElementById('menuSync');
+  if (el) el.textContent = '식단 불러오는 중…';
+  try {
+    const res = await fetch('/api/menus' + (refresh ? '?refresh=1' : ''));
+    const ct = res.headers.get('content-type') || '';
+    if (!res.ok) {
+      throw new Error(
+        res.status === 403
+          ? '식단 API 403 — Functions 배포·공개 호출(invoker) 설정을 확인하세요'
+          : `식단 API HTTP ${res.status}`,
+      );
+    }
+    if (!ct.includes('json')) {
+      throw new Error('식단 API가 JSON이 아닌 응답을 반환했습니다 (Hosting rewrite 확인)');
+    }
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || '식단 API 오류');
+    MENUS = data.MENUS || {};
+    menuMeta.updatedAt = data.updatedAt;
+    menuMeta.ready = Object.keys(MENUS).length > 0;
+    if (el) {
+      const t = menuMeta.updatedAt
+        ? new Date(menuMeta.updatedAt).toLocaleString('ko-KR', {
+            month: 'numeric',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        : '';
+      el.textContent = menuMeta.ready ? `식단 연동 · ${t}` : '식단 일부만 로드됨';
+    }
+    if (lastData) drawFood();
+  } catch (e) {
+    if (el) el.textContent = '식단 연동 실패';
+    showToast('공식 식단을 불러오지 못했어요');
+    console.error(e);
+  } finally {
+    menuMeta.loading = false;
+  }
+}
+
+async function ensureMenus() {
+  if (!menuMeta.ready && !menuMeta.loading) await loadMenus();
+}
+
+/* ════════════════════════════ TIME / WEATHER ════ */
+function tick() {
+  const n = typeof KST !== 'undefined' ? KST.now() : new Date(),
+    d = ['일', '월', '화', '수', '목', '금', '토'][n.getDay()];
+  document.getElementById('nowTime').textContent =
+    `${d}요일 ${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}`;
+}
+tick();
+setInterval(tick, 30000);
+
+const WX = [
+  { i: '☀️', l: '맑음 18°' },
+  { i: '⛅', l: '구름 15°' },
+  { i: '☁️', l: '흐림 13°' },
+  { i: '🌧️', l: '비 11°' },
+];
+const ww = WX[new Date().getDay() % WX.length];
+document.getElementById('wIco').textContent = ww.i;
+document.getElementById('wLbl').textContent = ww.l;
+loadMenus();
+loadCampusSchedule();
 
 /* ════════════════════════════ TABS ════ */
 function goTab(id, btn) {

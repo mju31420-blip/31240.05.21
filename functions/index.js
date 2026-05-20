@@ -93,6 +93,7 @@ function applySecrets() {
 
 export const api = onRequest(
   {
+    invoker: 'public',
     secrets: [anthropicApiKey, smtpHost, smtpUser, smtpPass, suggestToEmail],
     timeoutSeconds: 120,
     memory: '512MiB',
