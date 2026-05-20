@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "description": "건물·종료시각·식사시간대별 이동 파동 시드 (~100건). 실측 데이터로 교체 가능.",
+  "note": "앱은 functions/services/crowdModel.js 와 동일 규칙 사용"
+}
