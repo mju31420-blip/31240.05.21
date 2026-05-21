@@ -14,6 +14,18 @@ function getTransport() {
   });
 }
 
+function utf8Subject(subject) {
+  return `=?UTF-8?B?${Buffer.from(subject, 'utf8').toString('base64')}?=`;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 export async function sendSuggestionEmail(payload) {
   const to = process.env.SUGGEST_TO_EMAIL;
   const from = process.env.SMTP_FROM || process.env.SMTP_USER;
@@ -31,7 +43,7 @@ export async function sendSuggestionEmail(payload) {
   }
 
   const { type, body, name, home, replyEmail } = payload;
-  const subject = `[명비서 건의] ${type || '기타'}`;
+  const subjectRaw = `[명비서 건의] ${type || '기타'}`;
   const text = [
     `유형: ${type || '기타'}`,
     `이름: ${name || '익명'}`,
@@ -45,6 +57,20 @@ export async function sendSuggestionEmail(payload) {
     .filter(Boolean)
     .join('\n');
 
-  await transport.sendMail({ from, to, subject, text });
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family:Malgun Gothic,sans-serif;line-height:1.6">${escapeHtml(text).replace(/\n/g, '<br>')}</body></html>`;
+
+  await transport.sendMail({
+    from,
+    to,
+    subject: utf8Subject(subjectRaw),
+    text,
+    html,
+    encoding: 'base64',
+    charset: 'utf-8',
+    headers: {
+      'Content-Type': 'text/html; charset=UTF-8',
+      'Content-Transfer-Encoding': 'base64',
+    },
+  });
   return { sent: true, to };
 }

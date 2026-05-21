@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>명비서 — 개발자 대시보드</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --navy: #0c2461;
+      --navy2: #071730;
+      --blue: #2563eb;
+      --border: #e2e8f2;
+      --sub: #94a3b8;
+      --text: #0f172a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Noto Sans KR', sans-serif;
+      background: #eef2f9;
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .gate {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: linear-gradient(150deg, var(--navy2), var(--navy));
+    }
+    .gate-box {
+      background: #fff;
+      border-radius: 16px;
+      padding: 28px 24px;
+      width: 100%;
+      max-width: 360px;
+      box-shadow: 0 12px 40px rgba(7, 23, 48, 0.25);
+    }
+    .gate-title { font-size: 20px; font-weight: 700; color: var(--navy); margin-bottom: 8px; }
+    .gate-desc { font-size: 13px; color: var(--sub); margin-bottom: 16px; }
+    .gate-inp {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      font-size: 16px;
+      margin-bottom: 12px;
+    }
+    .gate-btn {
+      width: 100%;
+      padding: 13px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--navy), var(--blue));
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .gate-err { color: #dc2626; font-size: 12px; margin-top: 8px; min-height: 18px; }
+    .dash { display: none; max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
+    .dash.on { display: block; }
+    .hdr {
+      background: linear-gradient(150deg, var(--navy2), var(--navy));
+      color: #fff;
+      border-radius: 16px;
+      padding: 22px 20px;
+      margin-bottom: 20px;
+    }
+    .hdr h1 { font-size: 22px; margin-bottom: 4px; }
+    .hdr p { font-size: 12px; color: #93b8e8; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+    @media (min-width: 720px) {
+      .grid { grid-template-columns: 1fr 1fr; }
+      .grid .wide { grid-column: 1 / -1; }
+    }
+    .card {
+      background: #fff;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      padding: 16px;
+      box-shadow: 0 2px 10px rgba(12, 36, 97, 0.06);
+    }
+    .card h2 { font-size: 14px; color: var(--navy); margin-bottom: 12px; }
+    .chart-wrap { position: relative; height: 240px; }
+    .chart-wrap.tall { height: 200px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { padding: 8px 6px; border-bottom: 1px solid #f0f4fb; text-align: left; }
+    th { color: var(--sub); font-weight: 600; }
+    .sat-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .sat-pill {
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .sat-good { background: #dcfce7; color: #166534; }
+    .sat-neutral { background: #f3f4f6; color: #4b5563; }
+    .sat-bad { background: #fee2e2; color: #991b1b; }
+    .heat {
+      display: grid;
+      grid-template-columns: repeat(9, 1fr);
+      gap: 4px;
+      margin-top: 8px;
+    }
+    .heat-cell {
+      aspect-ratio: 1;
+      border-radius: 4px;
+      font-size: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: 700;
+    }
+    .heat-lbl { font-size: 10px; color: var(--sub); text-align: center; margin-top: 4px; }
+    .loading { text-align: center; color: var(--sub); padding: 40px; }
+  </style>
+</head>
+<body>
+
+<div class="gate" id="gate">
+  <div class="gate-box">
+    <div class="gate-title">🔒 개발자 대시보드</div>
+    <div class="gate-desc">명비서 방문 데이터 분석 (개발팀 전용)</div>
+    <input class="gate-inp" id="pwIn" type="password" placeholder="비밀번호" autocomplete="off">
+    <button class="gate-btn" type="button" id="pwBtn">입장</button>
+    <div class="gate-err" id="pwErr"></div>
+  </div>
+</div>
+
+<div class="dash" id="dash">
+  <div class="hdr">
+    <h1>📊 명비서 데이터 대시보드</h1>
+    <p>Firestore <code>visits</code> 컬렉션 · <span id="visitCount">0</span>건</p>
+  </div>
+  <div id="loadMsg" class="loading">데이터 불러오는 중…</div>
+  <div class="grid" id="charts" style="display:none">
+    <div class="card">
+      <h2>📊 식당별 총 방문 수</h2>
+      <div class="chart-wrap"><canvas id="chartRest"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>📅 요일별 방문 패턴</h2>
+      <div class="chart-wrap"><canvas id="chartDow"></canvas></div>
+    </div>
+    <div class="card wide">
+      <h2>😊 식당별 만족도 (good / neutral / bad)</h2>
+      <div id="satBars"></div>
+    </div>
+    <div class="card wide">
+      <h2>🔥 시간대별 혼잡도 평균 (11~19시)</h2>
+      <div class="heat" id="heatRow"></div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px">
+        <span class="heat-lbl">11시</span><span class="heat-lbl">13시</span><span class="heat-lbl">15시</span><span class="heat-lbl">17시</span><span class="heat-lbl">19시</span>
+      </div>
+    </div>
+    <div class="card wide">
+      <h2>🕐 최근 방문 기록 20개</h2>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr><th>시각</th><th>식당</th><th>혼잡도</th><th>만족도</th></tr>
+          </thead>
+          <tbody id="recentTbl"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+  import { getFirestore, collection, getDocs, query, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+  const PASS = '31420';
+  const gate = document.getElementById('gate');
+  const dash = document.getElementById('dash');
+  const pwIn = document.getElementById('pwIn');
+  const pwErr = document.getElementById('pwErr');
+
+  if (sessionStorage.getItem('mb_dash_ok') === '1') {
+    gate.style.display = 'none';
+    dash.classList.add('on');
+    boot();
+  }
+
+  function tryLogin() {
+    if (pwIn.value === PASS) {
+      sessionStorage.setItem('mb_dash_ok', '1');
+      gate.style.display = 'none';
+      dash.classList.add('on');
+      boot();
+      pwErr.textContent = '';
+    } else {
+      pwErr.textContent = '비밀번호가 올바르지 않습니다.';
+    }
+  }
+
+  document.getElementById('pwBtn').onclick = tryLogin;
+  pwIn.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') tryLogin();
+  });
+
+  async function boot() {
+    let firebaseConfig = { projectId: 'myeong-biseo-v2' };
+    try {
+      const res = await fetch('/__/firebase/init.json');
+      if (res.ok) firebaseConfig = await res.json();
+    } catch (e) {
+      console.warn(e);
+    }
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    let rows = [];
+    try {
+      const snap = await getDocs(query(collection(db, 'visits'), orderBy('timestamp', 'desc'), limit(500)));
+      snap.forEach((doc) => {
+        const d = doc.data();
+        const ts = d.timestamp?.toDate ? d.timestamp.toDate() : new Date(d.timestamp || Date.now());
+        rows.push({
+          restaurant: d.restaurant || '-',
+          satisfaction: d.satisfaction || 'neutral',
+          actualCrowd: Number(d.actualCrowd) || 40,
+          dow: d.dow ?? ts.getDay(),
+          hour: d.hour ?? ts.getHours(),
+          timestamp: ts,
+        });
+      });
+    } catch (e) {
+      document.getElementById('loadMsg').textContent = 'Firestore 로드 실패: ' + e.message;
+      return;
+    }
+
+    if (!rows.length) {
+      try {
+        rows = JSON.parse(localStorage.getItem('visits') || '[]').map((d) => ({
+          ...d,
+          timestamp: new Date(d.timestamp),
+        }));
+      } catch {
+        rows = [];
+      }
+    }
+
+    document.getElementById('loadMsg').style.display = 'none';
+    document.getElementById('charts').style.display = 'grid';
+    document.getElementById('visitCount').textContent = String(rows.length);
+    renderCharts(rows);
+  }
+
+  function renderCharts(rows) {
+    const rests = ['기숙사', '명진당', '교직원', '학생회관'];
+    const restCounts = Object.fromEntries(rests.map((r) => [r, 0]));
+    rows.forEach((r) => {
+      if (restCounts[r.restaurant] != null) restCounts[r.restaurant]++;
+    });
+
+    new Chart(document.getElementById('chartRest'), {
+      type: 'bar',
+      data: {
+        labels: rests,
+        datasets: [{
+          label: '방문 수',
+          data: rests.map((r) => restCounts[r]),
+          backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'],
+        }],
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
+    });
+
+    const dowLabels = ['일', '월', '화', '수', '목', '금', '토'];
+    const dowCounts = [0, 0, 0, 0, 0, 0, 0];
+    rows.forEach((r) => {
+      if (r.dow >= 0 && r.dow <= 6) dowCounts[r.dow]++;
+    });
+    new Chart(document.getElementById('chartDow'), {
+      type: 'bar',
+      data: {
+        labels: dowLabels,
+        datasets: [{
+          label: '방문 수',
+          data: dowCounts,
+          backgroundColor: '#2563eb',
+        }],
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
+    });
+
+    const satHtml = rests
+      .map((rest) => {
+        const subset = rows.filter((r) => r.restaurant === rest);
+        const total = subset.length || 1;
+        const g = subset.filter((r) => r.satisfaction === 'good').length;
+        const n = subset.filter((r) => r.satisfaction === 'neutral').length;
+        const b = subset.filter((r) => r.satisfaction === 'bad').length;
+        return `<div style="margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:4px">${rest} (${subset.length}건)</div>
+          <div class="sat-bar">
+            <span class="sat-pill sat-good">good ${Math.round((g / total) * 100)}%</span>
+            <span class="sat-pill sat-neutral">neutral ${Math.round((n / total) * 100)}%</span>
+            <span class="sat-pill sat-bad">bad ${Math.round((b / total) * 100)}%</span>
+          </div>
+        </div>`;
+      })
+      .join('');
+    document.getElementById('satBars').innerHTML = satHtml;
+
+    const hours = [];
+    for (let h = 11; h <= 19; h++) hours.push(h);
+    const hourAvg = hours.map((h) => {
+      const subset = rows.filter((r) => r.hour === h);
+      if (!subset.length) return null;
+      return subset.reduce((s, r) => s + r.actualCrowd, 0) / subset.length;
+    });
+    const heatRow = document.getElementById('heatRow');
+    heatRow.innerHTML = hours
+      .map((h, i) => {
+        const v = hourAvg[i];
+        const bg = v == null ? '#e2e8f0' : v < 35 ? '#86efac' : v < 60 ? '#fde047' : v < 80 ? '#fb923c' : '#ef4444';
+        const txt = v == null ? '-' : Math.round(v);
+        return `<div class="heat-cell" style="background:${bg}">${txt}</div>`;
+      })
+      .join('');
+
+    const satLabel = { good: '😊', neutral: '😐', bad: '😞' };
+    const crowdLabel = (v) => (v <= 20 ? '한산' : v <= 50 ? '보통' : v <= 75 ? '혼잡' : '매우혼잡');
+    const recent = [...rows]
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 20);
+    document.getElementById('recentTbl').innerHTML = recent
+      .map(
+        (r) =>
+          `<tr>
+            <td>${r.timestamp.toLocaleString('ko-KR')}</td>
+            <td>${r.restaurant}</td>
+            <td>${crowdLabel(r.actualCrowd)} (${r.actualCrowd})</td>
+            <td>${satLabel[r.satisfaction] || r.satisfaction}</td>
+          </tr>`,
+      )
+      .join('');
+  }
+</script>
+</body>
+</html>

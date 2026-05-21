@@ -200,15 +200,42 @@ function tick() {
 tick();
 setInterval(tick, 30000);
 
-const WX = [
-  { i: '☀️', l: '맑음 18°' },
-  { i: '⛅', l: '구름 15°' },
-  { i: '☁️', l: '흐림 13°' },
-  { i: '🌧️', l: '비 11°' },
-];
-const ww = WX[new Date().getDay() % WX.length];
-document.getElementById('wIco').textContent = ww.i;
-document.getElementById('wLbl').textContent = ww.l;
+async function fetchWeather() {
+  try {
+    const res = await fetch(
+      'https://api.open-meteo.com/v1/forecast?latitude=37.2219&longitude=127.1887&current=temperature_2m,weathercode&timezone=Asia%2FSeoul',
+    );
+    const data = await res.json();
+    const temp = Math.round(data.current.temperature_2m);
+    const code = data.current.weathercode;
+    let icon, label;
+    if (code === 0) {
+      icon = '☀️';
+      label = `맑음 ${temp}°`;
+    } else if (code <= 3) {
+      icon = '⛅';
+      label = `구름 ${temp}°`;
+    } else if (code <= 48) {
+      icon = '☁️';
+      label = `흐림 ${temp}°`;
+    } else if (code <= 67) {
+      icon = '🌧️';
+      label = `비 ${temp}°`;
+    } else if (code <= 77) {
+      icon = '❄️';
+      label = `눈 ${temp}°`;
+    } else {
+      icon = '🌧️';
+      label = `비/눈 ${temp}°`;
+    }
+    document.getElementById('wIco').textContent = icon;
+    document.getElementById('wLbl').textContent = label;
+  } catch (e) {
+    console.error('날씨 로드 실패', e);
+  }
+}
+fetchWeather();
+setInterval(fetchWeather, 30 * 60 * 1000);
 loadMenus();
 loadCampusSchedule();
 
@@ -240,6 +267,7 @@ let dayMode = 'today',
 
 function setRank(m) {
   rankMode = m;
+  if (lastData) lastData.rankMode = m;
   document.getElementById('rBal')?.classList.toggle('on', m === 'balance');
   document.getElementById('rDist')?.classList.toggle('on', m === 'distance');
   document.getElementById('rFood')?.classList.toggle('on', m === 'food');
@@ -318,11 +346,96 @@ const TKEYS = {
   가성비: [],
 };
 
-const MODE_SCORE_BADGE = {
-  balance: (s) => `⚖️ 균형 점수 ${s}점`,
-  distance: (s) => `📍 거리 최적 ${s}점`,
-  food: (s) => `🍽️ 취향 매칭 ${s}점`,
-};
+const DELIVERY_LINKS = [
+  { name: '배달의민족', url: 'https://www.baemin.com', icon: '🛵' },
+  { name: '쿠팡이츠', url: 'https://www.coupangeats.com', icon: '🟡' },
+  { name: '요기요', url: 'https://www.yogiyo.co.kr', icon: '🔴' },
+];
+
+function renderDeliverySectionHtml() {
+  const opts = DELIVERY_LINKS.map(
+    (d) =>
+      `<a class="delivery-opt-btn" href="${d.url}" target="_blank" rel="noopener noreferrer">${d.icon} ${d.name}</a>`,
+  ).join('');
+  return `<div class="delivery-wrap">
+    <button type="button" class="delivery-main-btn" onclick="toggleDeliveryOptions()">🛵 배달 앱으로 주문하기 (배민 · 쿠팡이츠 · 요기요)</button>
+    <div class="delivery-options" id="deliveryOptions">${opts}</div>
+  </div>`;
+}
+
+function toggleDeliveryOptions() {
+  document.getElementById('deliveryOptions')?.classList.toggle('on');
+}
+
+/** CampusDistance 미로드 시 폴백 */
+function scoreRestaurantLocal({ fromKey, nextKey, gapMin, restaurantKey, waitMin, matchCount, mode, status }) {
+  if (status === 'closed') return { score: -9999 };
+  if (status === 'bad') return { score: -500 };
+
+  const walk =
+    typeof CampusDistance !== 'undefined' ? CampusDistance.walkToRest(fromKey, restaurantKey) : 8;
+  const back =
+    nextKey === 'none' || !nextKey
+      ? 0
+      : typeof CampusDistance !== 'undefined'
+        ? CampusDistance.walkToRest(restaurantKey, nextKey)
+        : 8;
+
+  const totalTime = walk + waitMin + 15 + back;
+  const timeScore = Math.max(0, 100 - totalTime * 1.5);
+  const waitScore = Math.max(0, 100 - waitMin * 2.5);
+  const matchScore = Math.min(100, matchCount * 30);
+
+  let w = 1.0;
+  try {
+    const weights = JSON.parse(localStorage.getItem('restaurant_weights') || '{}');
+    w = weights[restaurantKey] || 1.0;
+  } catch (e) {
+    /* ignore */
+  }
+
+  let score;
+  if (mode === 'distance') {
+    score = (timeScore * 0.75 + waitScore * 0.2 + matchScore * 0.05) * w;
+  } else if (mode === 'food') {
+    score = (matchScore * 0.75 + timeScore * 0.15 + waitScore * 0.1) * w;
+  } else {
+    score = (timeScore * 0.4 + waitScore * 0.2 + matchScore * 0.4) * w;
+  }
+
+  return { score: Math.round(score || 0) };
+}
+
+function getRestaurantScore(opts) {
+  if (typeof CampusDistance !== 'undefined' && typeof CampusDistance.scoreRestaurant === 'function') {
+    return CampusDistance.scoreRestaurant(opts);
+  }
+  return scoreRestaurantLocal(opts);
+}
+
+function crowdBadgeLabel(st, baseBadge) {
+  if (st === 'closed') return '저녁 운영 없음';
+  if (baseBadge) return baseBadge;
+  if (st === 'ok') return '원활';
+  if (st === 'warn') return '혼잡 주의';
+  if (st === 'bad') return '대기 길음';
+  return '혼잡 주의';
+}
+
+function platformUrl(platform, q) {
+  if (platform === '배달의민족') return `https://www.baemin.com/search?q=${encodeURIComponent(q)}`;
+  if (platform === '쿠팡이츠') return `https://www.coupangeats.com/search?q=${encodeURIComponent(q)}`;
+  if (platform === '요기요') return `https://www.yogiyo.co.kr/search/?query=${encodeURIComponent(q)}`;
+  return `https://map.naver.com/v5/search/${encodeURIComponent(q)}`;
+}
+
+const VISIT_RESTAURANTS = [
+  { key: '기숙사', label: '🏠 기숙사식당' },
+  { key: '명진당', label: '🍱 명진당' },
+  { key: '교직원', label: '👔 교직원식당' },
+  { key: '학생회관', label: '🏢 학생회관' },
+];
+let visitDraft = {};
 
 function effectiveTastes() {
   let learned = [];
@@ -515,7 +628,7 @@ function buildAndRender(cur, curTxt, nxtTxt, gapMin, period, extra = {}) {
   if (mealIntent.willEat) {
     Object.entries(식당).forEach(([k, v]) => {
       const matchCount = v.메뉴.filter((m) => m.tag === 'match').length;
-      const { score } = CampusDistance.scoreRestaurant({
+      const { score } = getRestaurantScore({
         fromKey: cur,
         nextKey,
         gapMin,
@@ -644,11 +757,12 @@ function drawAltFood() {
     box.innerHTML = '';
     return;
   }
+  const urlFn = typeof MealEngine !== 'undefined' ? MealEngine.platformUrl : platformUrl;
   const items = ext.list
-    .map(
-      (it) =>
-        `<a class="alt-link" href="${MealEngine.platformUrl(it.platform, it.q)}" target="_blank" rel="noopener">${it.platform} · ${it.name}</a>`,
-    )
+    .map((it) => {
+      const href = urlFn(it.platform, it.q);
+      return `<a class="alt-link" href="${href}" target="_blank" rel="noopener noreferrer">${it.platform} · ${it.name}</a>`;
+    })
     .join('');
   box.className = 'alt-food on';
   box.innerHTML = `<div class="alt-ttl">🛒 학식 대신 추천</div><div class="alt-why">${ext.why}</div><div class="alt-links">${items}</div>`;
@@ -659,25 +773,15 @@ function drawFood() {
   const src = dayMode === 'today' ? lastData.오늘 : lastData.내일;
   if (!src?.식당) return;
 
-  if (!lastData.mealIntent?.willEat && dayMode === 'today') {
-    document.getElementById('foodGate').style.display = 'block';
-    document.getElementById('foodRes').style.display = 'none';
-    document.getElementById('foodGate').innerHTML = `<div class="gate-ico">⏱️</div>
-      <div class="gate-title">식사 이동 시간이 아니에요</div>
-      <div class="gate-desc">${lastData.mealIntent?.reason || ''}<br>다이어트·간식은 외부 추천을 확인하세요.</div>`;
-    drawAltFood();
-    return;
-  }
-
-  document.getElementById('foodGate').style.display = 'none';
-  document.getElementById('foodRes').style.display = 'block';
   drawAltFood();
   document.getElementById('dayChip').innerHTML =
     dayMode === 'tomorrow' && lastData.내일?.예측 ? `<div class="pred-chip">🔮 내일 예측 — ${lastData.내일.예측}</div>` : '';
 
+  const deliveryWrap = document.getElementById('deliveryWrap');
   if (!menuMeta.ready) {
     document.getElementById('rcWrap').innerHTML =
       '<p style="text-align:center;color:var(--sub);font-size:12px;padding:20px">공식 식단 불러오는 중…</p>';
+    if (deliveryWrap) deliveryWrap.innerHTML = '';
     return;
   }
 
@@ -686,7 +790,7 @@ function drawFood() {
   const MEAL = CampusDistance.EAT_MIN;
   const INSTA = {
     기숙사: 'https://www.instagram.com/mj_bokji_foodist/',
-    명진당: 'https://www.instagram.com/mj_bangmok_foodist/',
+    명진당: 'https://www.instagram.com/mju_lounge/',
     교직원: 'https://www.instagram.com/mj_bangmok_foodist/',
     학생회관: 'https://www.instagram.com/mjhs_yongin/',
   };
@@ -697,8 +801,7 @@ function drawFood() {
     { key: '학생회관', e: '🏢', n: '학생회관 식당' },
   ];
   const TMAP = { 추천: 'mt-rec', 인기: 'mt-hot', 신메뉴: 'mt-new', match: 'mt-match' };
-  const mode = lastData.rankMode || rankMode;
-  const scoreBadgeFn = MODE_SCORE_BADGE[mode] || MODE_SCORE_BADGE.balance;
+  const activeRankMode = rankMode || lastData.rankMode || 'balance';
 
   const scored = DEFS.map((def) => {
     const base = src.식당[def.key] || {};
@@ -712,14 +815,14 @@ function drawFood() {
     const total = base.총소요 || walk + wait + MEAL + back;
     const margin = base.trip?.margin ?? gapMin - total;
     const matchB = menus.filter((m) => m.tag === 'match').length;
-    const { score } = CampusDistance.scoreRestaurant({
+    const { score } = getRestaurantScore({
       fromKey: lastData.현재건물키 || '3공',
       nextKey,
       gapMin,
       restaurantKey: def.key,
       waitMin: wait,
       matchCount: matchB,
-      mode,
+      mode: activeRankMode,
       status: st,
     });
     return { ...def, base, st, menus, walk, back, wait, cong, total, margin, score, openNow };
@@ -728,7 +831,11 @@ function drawFood() {
   let pickName = '추천 식당';
   let pickKey = scored[0]?.key;
   const wrap = document.getElementById('rcWrap');
-  wrap.innerHTML = '';
+  const shortGapBanner =
+    dayMode === 'today' && gapMin < 45
+      ? '<div class="gap-short-banner">⚠️ 공강이 짧아요! 빠른 식당을 우선 추천해요</div>'
+      : '';
+  wrap.innerHTML = shortGapBanner;
 
   scored.forEach((row, idx) => {
     const { key, e, n, base, st, menus, walk, back, wait, cong, total, margin, score, openNow } = row;
@@ -737,7 +844,6 @@ function drawFood() {
       pickName = n;
       pickKey = key;
     }
-    const scoreBadge = score >= 0 ? `<div class="rank-mode-badge">${scoreBadgeFn(score)}</div>` : '';
     const mc = margin >= 15 ? 'c-safe' : margin >= 3 ? 'c-tight' : 'c-over';
     const mi = margin >= 15 ? '✅' : margin >= 3 ? '⚠️' : '❌';
     const mt = margin >= 0 ? `여유 ${margin}분` : `복귀 불가 ${Math.abs(margin)}분`;
@@ -746,8 +852,12 @@ function drawFood() {
     const matchMs = menus.filter((m) => m.tag === 'match');
     const sortedM = [...matchMs, ...menus.filter((m) => m.tag !== 'match')];
     const mealLbl = mealMode === 'dinner' ? '🌙 저녁' : '☀️ 점심';
-    const badgeTxt = st === 'closed' ? '저녁 운영 없음' : base.배지 || '';
-    const badgeCls = isPick ? 'bdg-g' : st === 'ok' ? 'bdg-g' : st === 'warn' ? 'bdg-o' : st === 'bad' ? 'bdg-r' : 'bdg-gr';
+    const crowdLbl = crowdBadgeLabel(st, base.배지);
+    const badgeCls = st === 'ok' ? 'bdg-g' : st === 'warn' ? 'bdg-o' : st === 'bad' ? 'bdg-r' : 'bdg-gr';
+    const headBadge =
+      isPick && st !== 'closed'
+        ? `<span class="bdg bdg-g">⭐ 1순위 · ${crowdLbl}</span>`
+        : `<span class="bdg ${badgeCls}">${crowdLbl}</span>`;
     const rankTxt = isPick ? '' : idx === 1 ? '<span class="rank rank-2">2순위</span>' : idx === 2 ? '<span class="rank rank-3">3순위</span>' : '';
 
     let menuHtml;
@@ -778,11 +888,9 @@ function drawFood() {
     card.className = 'rc ' + rcCls;
     card.innerHTML =
       st === 'closed'
-        ? `<div class="rc-in">${scoreBadge}<div class="rc-head"><div class="rc-name">${e} ${n}${rankTxt}</div><span class="bdg ${badgeCls}">${badgeTxt}</span></div>${menuHtml}${instaHtml}</div>`
+        ? `<div class="rc-in"><div class="rc-head"><div class="rc-name">${e} ${n}${rankTxt}</div>${headBadge}</div>${menuHtml}${instaHtml}</div>`
         : `<div class="rc-in rc-compact">
-      ${scoreBadge}
-      ${isPick ? '<div class="pick-crown">⭐ 1순위</div>' : ''}
-      <div class="rc-head"><div class="rc-name">${e} ${n}${rankTxt}</div><span class="bdg ${badgeCls}">${badgeTxt}</span></div>
+      <div class="rc-head"><div class="rc-name">${e} ${n}${rankTxt}</div>${headBadge}</div>
       <div class="time-oneline">🚶 ${walk}분 · ⏳ <span class="${wc}">${wait}분</span> · 🔙 ${backLbl} ${back ? back + '분' : '-'} · 식사포함 <b>${total}분</b> / 공강 ${gapMin}분 <span class="${mc}">${mi}${mt}</span></div>
       ${menuHtml}
       ${instaHtml}
@@ -790,8 +898,10 @@ function drawFood() {
     wrap.appendChild(card);
   });
 
+  if (deliveryWrap) deliveryWrap.innerHTML = renderDeliverySectionHtml();
+
   window._lastPickKey = pickKey;
-  document.getElementById('fbBtn').textContent = `✅ ${pickName} 방문 완료`;
+  document.getElementById('fbBtn').textContent = '✅ 방문 완료 기록';
   setTimeout(() => document.getElementById('fbBox').classList.add('on'), 400);
 }
 
@@ -902,6 +1012,40 @@ function getKstMinutes() {
   return n.getHours() * 60 + n.getMinutes();
 }
 
+/** 직전 지난 버스 1개 + 2시간 이내 예정 버스 (등교/하교 공통) */
+function buildShuttleUpcomingList(events, nowM, streamMoving = false) {
+  const sorted = [...events].sort((a, b) => a.depM - b.depM);
+  const completed = sorted.filter((ev) => ev.arrM <= nowM);
+  const lastPast = completed.length ? completed[completed.length - 1] : null;
+  const inFlight = sorted.find((ev) => nowM >= ev.depM && nowM < ev.arrM);
+  const future = sorted.filter((ev) => ev.depM > nowM && ev.depM <= nowM + 120);
+  const firstUp = future[0];
+  const out = [];
+
+  if (lastPast) {
+    out.push({ ...lastPast, isPast: true, remain: 0, hl: false });
+  }
+  if (inFlight) {
+    out.push({
+      ...inFlight,
+      isPast: false,
+      isMoving: true,
+      remain: inFlight.arrM - nowM,
+      hl: true,
+    });
+  }
+  future.forEach((ev) => {
+    out.push({
+      ...ev,
+      isPast: false,
+      isMoving: false,
+      remain: ev.depM - nowM,
+      hl: !streamMoving && !inFlight && firstUp && ev.depM === firstUp.depM,
+    });
+  });
+  return out.sort((a, b) => a.depM - b.depM);
+}
+
 function getShuttleCongestionHint() {
   const dow = getKstNow().getDay();
   const nowM = getKstMinutes();
@@ -971,15 +1115,7 @@ function analyzeSchoolDepart(schedule, opts = {}) {
     }
   }
 
-  const firstUp = events.find((ev) => ev.depM > nowM);
-  const upcoming = events
-    .filter((ev) => ev.depM > nowM && ev.depM <= nowM + 120)
-    .slice(0, 6)
-    .map((ev) => ({
-      ...ev,
-      remain: ev.depM - nowM,
-      hl: !moving && firstUp && ev.depM === firstUp.depM,
-    }));
+  const upcoming = buildShuttleUpcomingList(events, nowM, moving);
 
   const lastM = events.length ? events[events.length - 1].depM : 0;
   if (nowM > lastM + 20 && !moving) {
@@ -996,6 +1132,7 @@ function analyzeSchoolDepart(schedule, opts = {}) {
     limit18: schedule.limit18,
     hint: getShuttleCongestionHint(),
     events,
+    moving,
   };
 }
 
@@ -1064,16 +1201,9 @@ function analyzeGiheungShuttle() {
     }
   }
 
-  const upcoming = [
-    ...toCampus
-      .filter((ev) => ev.depM > nowM && ev.depM <= nowM + 120)
-      .slice(0, 3)
-      .map((ev) => ({ ...ev, remain: ev.depM - nowM, kind: '등교' })),
-    ...school.upcoming.slice(0, 4),
-  ]
-    .sort((a, b) => a.depM - b.depM)
-    .slice(0, 6)
-    .map((ev, i) => ({ ...ev, hl: i === 0 && !moving }));
+  const arriveList = buildShuttleUpcomingList(toCampus, nowM, moving);
+  const departList = buildShuttleUpcomingList(school.events || [], nowM, school.moving);
+  const upcoming = [...arriveList, ...departList].sort((a, b) => a.depM - b.depM);
 
   return {
     statusText,
@@ -1091,10 +1221,14 @@ function renderShuttleCard(containerId, title, route, analysis, modalKind) {
   const bc = analysis.statusCls === 'ok' ? 'bdg-g' : analysis.statusCls === 'bad' ? 'bdg-r' : 'bdg-o';
   const shcCls = analysis.statusCls === 'ok' ? 'shc-ok' : analysis.statusCls === 'bad' ? 'shc-bad' : 'shc-warn';
   const upHtml = analysis.upcoming.length
-    ? `<div class="sh-upcoming"><div style="font-weight:700;color:var(--navy);margin-bottom:6px">⏱ 2시간 이내 (학교 출발·도착 기준)</div>${analysis.upcoming
+    ? `<div class="sh-upcoming"><div style="font-weight:700;color:var(--navy);margin-bottom:6px">⏱ 직전·2시간 이내 (학교 출발·도착 기준)</div>${analysis.upcoming
         .map((u) => {
           const label = u.kind === '등교' ? `기흥역 ${u.depart} → 캠퍼스 ${u.arrive}` : `학교 ${u.depart} 출발 · ${u.type || ''}`;
-          return `<div class="sh-up-row${u.hl ? ' hl' : ''}"><span>${label}</span><span><b>${u.remain}분 후</b></span></div>`;
+          if (u.isPast) {
+            return `<div class="sh-up-row past"><span>${label}</span><span class="sh-past-lbl">지난 버스</span></div>`;
+          }
+          const timeLbl = u.isMoving ? `<b>이동 중 · ${u.remain}분 후 도착</b>` : `<b>${u.remain}분 후</b>`;
+          return `<div class="sh-up-row${u.hl ? ' hl' : ''}"><span>${label}</span><span>${timeLbl}</span></div>`;
         })
         .join('')}</div>`
     : '<div class="sh-upcoming" style="color:var(--sub)">2시간 이내 예정 버스 없음</div>';
@@ -1136,6 +1270,13 @@ function drawShuttle() {
 let shModalKind = 'giheung';
 let shModalTab = 'arrive';
 
+function renderGiheungModalTabs() {
+  const tabs = document.getElementById('shModalTabs');
+  if (!tabs) return;
+  tabs.innerHTML = `<button type="button" class="modal-tab${shModalTab === 'arrive' ? ' on' : ''}" onclick="setShuttleModalTab('arrive')">등교 (캠퍼스 도착)</button>
+    <button type="button" class="modal-tab${shModalTab === 'depart' ? ' on' : ''}" onclick="setShuttleModalTab('depart')">하교 (학교 출발)</button>`;
+}
+
 function openShuttleModal(kind) {
   shModalKind = kind;
   shModalTab = kind === 'giheung' ? 'arrive' : 'depart';
@@ -1149,19 +1290,16 @@ function openShuttleModal(kind) {
     city: '시내 셔틀 전체표 (학교 출발)',
   };
   title.textContent = titles[kind] || '셔틀 전체표';
-  if (kind === 'giheung') {
-    tabs.innerHTML = `<button type="button" class="modal-tab${shModalTab === 'arrive' ? ' on' : ''}" onclick="setShuttleModalTab('arrive')">등교 (캠퍼스 도착)</button>
-      <button type="button" class="modal-tab${shModalTab === 'depart' ? ' on' : ''}" onclick="setShuttleModalTab('depart')">하교 (학교 출발)</button>`;
-  } else {
-    tabs.innerHTML = '';
-  }
+  if (kind === 'giheung') renderGiheungModalTabs();
+  else if (tabs) tabs.innerHTML = '';
   renderShuttleModalBody();
   modal.classList.add('on');
 }
 
 function setShuttleModalTab(tab) {
   shModalTab = tab;
-  openShuttleModal(shModalKind);
+  renderGiheungModalTabs();
+  renderShuttleModalBody();
 }
 
 function closeShuttleModal() {
@@ -1206,24 +1344,39 @@ function renderShuttleModalBody() {
     });
   }
 
-  let foundNext = false;
-  rows = rows.map((r) => {
-    const past = r.arrM < nowM;
-    let next = false;
-    if (!past && !foundNext && r.depM >= nowM - 2) {
-      next = true;
-      foundNext = true;
-    }
-    return { ...r, past, next };
-  });
+  const completed = rows.filter((r) => r.arrM <= nowM);
+  const lastPast = completed.length ? completed[completed.length - 1] : null;
+  const future = rows.filter((r) => r.depM > nowM && r.depM <= nowM + 120);
+  const inFlight = rows.find((r) => nowM >= r.depM && nowM < r.arrM);
+  const firstUp = future[0];
+
+  let display = [];
+  if (lastPast) display.push({ ...lastPast, isPast: true });
+  if (inFlight) display.push({ ...inFlight, isPast: false, isMoving: true });
+  display = [
+    ...display,
+    ...future.map((r) => ({
+      ...r,
+      isPast: false,
+      isMoving: false,
+      next: !inFlight && firstUp && r.depM === firstUp.depM,
+    })),
+  ];
+
+  const schedRows = display.length
+    ? display
+        .map((r) => {
+          const left = `${r.sub ? r.sub + ' · ' : ''}${shModalKind === 'giheung' && shModalTab === 'arrive' ? r.depart + ' 기흥역' : r.depart + ' 학교'} 출발`;
+          if (r.isPast) {
+            return `<div class="sched-row past"><span>${left}</span><span class="sh-past-lbl">지난 버스 · 도착 ${r.arrive}</span></div>`;
+          }
+          return `<div class="sched-row${r.next ? ' next' : ''}"><span>${left}</span><span>도착 ${r.arrive}</span></div>`;
+        })
+        .join('')
+    : '<p style="color:var(--sub);font-size:12px;padding:8px 0">오늘 남은 운행 시간이 없습니다.</p>';
 
   body.innerHTML =
-    rows
-      .map(
-        (r) =>
-          `<div class="sched-row${r.past ? ' past' : ''}${r.next ? ' next' : ''}"><span>${r.sub ? r.sub + ' · ' : ''}${shModalKind === 'giheung' && shModalTab === 'arrive' ? r.depart + ' 기흥역' : r.depart + ' 학교'} 출발</span><span>도착 ${r.arrive}</span></div>`,
-      )
-      .join('') +
+    schedRows +
     `<p class="sh-limit" style="margin-top:12px">⚠️ ${
       shModalKind === 'giheung'
         ? GIHEUNG_SCHEDULE.limit18
@@ -1306,49 +1459,97 @@ function typeText(eid, text, sp = 18) {
   }, sp);
 }
 
-let visCnt = 0;
-
 function recVisit() {
-  const key = window._lastPickKey;
-  if (!key || !lastData) {
-    showToast('먼저 식당 분석을 해주세요');
+  if (!lastData) {
+    showToast('먼저 시간표 분석을 해주세요');
     return;
   }
-  window._pendingVisitKey = key;
+  visitDraft = {};
+  renderVisitStep1();
+}
+
+function renderVisitStep1() {
   document.getElementById('fbBox').innerHTML = `
-    <div class="fb-title">실제 식당 혼잡도가 어땠나요?</div>
-    <div class="fb-desc">${key} 방문 기록 · 선택하면 학습에 반영됩니다</div>
-    <div class="crowd-fb-g">
-      <button type="button" class="crowd-fb-btn" onclick="submitCrowdFeedback(10)">한산 😊</button>
-      <button type="button" class="crowd-fb-btn" onclick="submitCrowdFeedback(40)">보통 😐</button>
-      <button type="button" class="crowd-fb-btn" onclick="submitCrowdFeedback(70)">혼잡 😰</button>
-      <button type="button" class="crowd-fb-btn" onclick="submitCrowdFeedback(90)">매우 혼잡 😱</button>
+    <div class="fb-title">어느 식당에 다녀오셨나요?</div>
+    <div class="visit-pick-g">
+      ${VISIT_RESTAURANTS.map((r) => `<button type="button" class="visit-pick-btn" onclick="pickVisitRestaurant('${r.key}')">${r.label}</button>`).join('')}
     </div>`;
 }
 
-function submitCrowdFeedback(actualCrowd) {
-  const key = window._pendingVisitKey || window._lastPickKey;
-  if (!key) return;
+function pickVisitRestaurant(key) {
+  visitDraft.restaurant = key;
+  renderVisitStep2();
+}
+
+function renderVisitStep2() {
+  document.getElementById('fbBox').innerHTML = `
+    <div class="fb-title">혼잡도는 어땠나요?</div>
+    <div class="fb-desc">${visitDraft.restaurant}</div>
+    <div class="crowd-fb-g">
+      <button type="button" class="crowd-fb-btn" onclick="pickVisitCrowd(10)">😊 한산</button>
+      <button type="button" class="crowd-fb-btn" onclick="pickVisitCrowd(40)">😐 보통</button>
+      <button type="button" class="crowd-fb-btn" onclick="pickVisitCrowd(70)">😰 혼잡</button>
+      <button type="button" class="crowd-fb-btn" onclick="pickVisitCrowd(90)">😱 매우 혼잡</button>
+    </div>
+    <button type="button" class="btn-again" onclick="renderVisitStep1()">← 식당 다시 선택</button>`;
+}
+
+function pickVisitCrowd(actualCrowd) {
+  visitDraft.actualCrowd = actualCrowd;
+  renderVisitStep3();
+}
+
+function renderVisitStep3() {
+  document.getElementById('fbBox').innerHTML = `
+    <div class="fb-title">어떠셨나요?</div>
+    <div class="fb-desc">${visitDraft.restaurant} · 만족도</div>
+    <div class="crowd-fb-g">
+      <button type="button" class="crowd-fb-btn" onclick="finishVisit('good')">😊 좋았어요</button>
+      <button type="button" class="crowd-fb-btn" onclick="finishVisit('neutral')">😐 보통이에요</button>
+      <button type="button" class="crowd-fb-btn" onclick="finishVisit('bad')">😞 별로예요</button>
+    </div>
+    <button type="button" class="btn-again" onclick="renderVisitStep2()">← 혼잡도 다시 선택</button>`;
+}
+
+async function finishVisit(satisfaction) {
   const now = getKstNow();
-  const entry = {
-    restaurant: key,
+  const record = {
+    restaurant: visitDraft.restaurant,
+    satisfaction,
+    actualCrowd: visitDraft.actualCrowd,
     dow: now.getDay(),
     hour: now.getHours(),
-    actualCrowd,
-    timestamp: Date.now(),
+    timestamp: new Date(),
   };
+
+  let visits = [];
+  try {
+    visits = JSON.parse(localStorage.getItem('visits') || '[]');
+  } catch {
+    visits = [];
+  }
+  visits.push({ ...record, timestamp: Date.now() });
+  if (visits.length > 500) visits = visits.slice(-500);
+  localStorage.setItem('visits', JSON.stringify(visits));
+
   let feedback = [];
   try {
     feedback = JSON.parse(localStorage.getItem('crowd_feedback') || '[]');
   } catch {
     feedback = [];
   }
-  feedback.push(entry);
+  feedback.push({
+    restaurant: record.restaurant,
+    dow: record.dow,
+    hour: record.hour,
+    actualCrowd: record.actualCrowd,
+    timestamp: Date.now(),
+  });
   if (feedback.length > 300) feedback = feedback.slice(-300);
   localStorage.setItem('crowd_feedback', JSON.stringify(feedback));
 
-  const menus = getMenus(key, mealMode);
-  recordVisitLearning(key, menus);
+  const menus = getMenus(record.restaurant, mealMode);
+  recordVisitLearning(record.restaurant, menus);
 
   let weights = {};
   try {
@@ -1356,11 +1557,20 @@ function submitCrowdFeedback(actualCrowd) {
   } catch {
     weights = {};
   }
-  weights[key] = Math.min(1.5, (weights[key] || 1) * 1.05);
+  weights[record.restaurant] = Math.min(1.5, (weights[record.restaurant] || 1) * 1.05);
   localStorage.setItem('restaurant_weights', JSON.stringify(weights));
 
-  visCnt++;
-  document.getElementById('fbBox').innerHTML = `<div class="fb-title">✅ 기록 완료</div><div class="fb-desc">${visCnt}번째 방문 · ${key}<br>혼잡도·취향 학습에 반영됐어요.</div>`;
+  if (typeof window.saveVisitToFirestore === 'function') {
+    try {
+      await window.saveVisitToFirestore(record);
+    } catch (e) {
+      console.warn('Firestore 저장 실패', e);
+    }
+  }
+
+  document.getElementById('fbBox').innerHTML = `
+    <div class="fb-title">✅ 기록 완료</div>
+    <div class="fb-desc">${record.restaurant} 방문이 저장됐어요.<br>다음 추천에 반영됩니다.</div>`;
   drawFood();
   showToast('✅ 피드백 감사해요! 다음 추천에 반영됩니다');
 }

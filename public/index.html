@@ -187,7 +187,15 @@ body{display:flex;justify-content:center}
 .crowd-fb-g{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
 .crowd-fb-btn{padding:10px 6px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11.5px;font-weight:600;cursor:pointer;font-family:'Noto Sans KR',sans-serif;touch-action:manipulation}
 .crowd-fb-btn:active{background:#eff6ff;border-color:var(--blue)}
-.rank-mode-badge{display:inline-block;font-size:10px;font-weight:700;padding:4px 10px;border-radius:20px;background:rgba(37,99,235,.1);color:var(--blue);margin-bottom:8px}
+.visit-pick-g{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.visit-pick-btn{padding:12px 8px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;color:var(--navy);cursor:pointer;font-family:'Noto Sans KR',sans-serif;touch-action:manipulation}
+.visit-pick-btn:active{background:#eff6ff;border-color:var(--blue)}
+.delivery-wrap{margin-top:12px;padding:12px 14px;background:#f8fafc;border:1.5px solid var(--border);border-radius:14px;text-align:center}
+.delivery-main-btn{width:100%;padding:12px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:13px;font-weight:700;color:var(--navy);cursor:pointer;font-family:'Noto Sans KR',sans-serif}
+.delivery-options{display:none;flex-direction:column;gap:7px;margin-top:10px}
+.delivery-options.on{display:flex}
+.delivery-opt-btn{display:block;padding:10px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:13px;font-weight:600;color:var(--text);text-decoration:none;text-align:center}
+.delivery-opt-btn:active{opacity:.85}
 .hp-learned{font-size:10px;color:#a5d8ff;margin-top:4px;line-height:1.4}
 .hp-learned b{color:#fff}
 .menu-list{display:flex;flex-direction:column;gap:0}
@@ -199,7 +207,6 @@ body{display:flex;justify-content:center}
 .rc-bad  .rc-in{background:var(--redd);border-color:#fca5a5}
 .rc-cl   .rc-in{background:var(--grayd);border-color:var(--border)}
 
-.pick-crown{position:absolute;top:-1px;right:11px;background:var(--green);color:#fff;font-size:9px;font-weight:700;padding:3px 9px;border-radius:0 0 8px 8px;letter-spacing:.2px}
 .rc-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
 .rc-name{font-size:14px;font-weight:700;color:var(--text);flex:1;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .rank{font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;flex-shrink:0}
@@ -262,6 +269,7 @@ body{display:flex;justify-content:center}
 
 /* ── PRED CHIP ── */
 .pred-chip{display:inline-flex;align-items:center;gap:4px;background:#f0fdf4;border:1px solid #86efac;color:#166534;padding:5px 11px;border-radius:20px;font-size:10.5px;font-weight:700;margin-bottom:12px}
+.gap-short-banner{background:#fff7ed;border:1.5px solid #fdba74;color:#9a3412;padding:10px 12px;border-radius:10px;font-size:12px;font-weight:700;margin-bottom:12px;text-align:center}
 
 /* ── SHUTTLE ── */
 .shc{border-radius:14px;margin-bottom:12px;display:none}
@@ -281,6 +289,8 @@ body{display:flex;justify-content:center}
 .sh-upcoming{margin-top:10px;font-size:11.5px;color:var(--muted)}
 .sh-up-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed rgba(0,0,0,.06);font-size:12px}
 .sh-up-row.hl{background:rgba(37,99,235,.08);border-radius:6px;padding:6px 8px;margin:0 -4px;font-weight:700;color:var(--navy)}
+.sh-up-row.past{color:var(--sub);opacity:.85}
+.sh-past-lbl{font-size:10px;font-weight:700;color:var(--gray);white-space:nowrap}
 .sh-limit{margin-top:8px;font-size:11px;color:#b45309;line-height:1.5}
 .btn-sh-sched{width:100%;margin-top:10px;padding:10px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:12.5px;font-weight:700;color:var(--navy);cursor:pointer;font-family:'Noto Sans KR',sans-serif}
 .modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:400;display:none;align-items:flex-end;justify-content:center}
@@ -499,12 +509,7 @@ body{display:flex;justify-content:center}
 
     <!-- ═══ 식당 탭 ═══ -->
     <div class="pane" id="pane-food">
-      <div id="foodGate" class="gate">
-        <div class="gate-ico">🍽️</div>
-        <div class="gate-title">시간표 분석이 필요해요</div>
-        <div class="gate-desc">시간표 탭에서 분석하면<br>거리·대기시간·메뉴 매칭을 한 번에 보여드려요</div>
-      </div>
-      <div id="foodRes" style="display:none">
+      <div id="foodRes">
         <!-- ★ 점심 / 저녁 토글 ★ -->
         <div class="meal-tog">
           <button class="meal-btn on" id="mLunch" onclick="setMeal('lunch')">☀️ 점심 식단</button>
@@ -519,6 +524,7 @@ body{display:flex;justify-content:center}
         <div id="altFood" class="alt-food"></div>
         <div class="slbl">교내 4대 식당 — 왕복 도보 반영 순위</div>
         <div id="rcWrap"></div>
+        <div id="deliveryWrap"></div>
         <div class="fb" id="fbBox">
           <div class="fb-title">📍 방문 후 기록하기</div>
           <div class="fb-desc">추천 식당에 다녀오셨나요?<br>기록하면 다음 추천 정확도가 높아집니다</div>
@@ -591,6 +597,32 @@ body{display:flex;justify-content:center}
 </div>
 <div class="toast" id="toast"></div>
 
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+  import { getFirestore, collection, addDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+  let firebaseConfig = { projectId: 'myeong-biseo-v2' };
+  try {
+    const res = await fetch('/__/firebase/init.json');
+    if (res.ok) firebaseConfig = await res.json();
+  } catch (e) {
+    console.warn('Firebase init.json 로드 실패 — Hosting 배포 후 자동 설정됩니다.', e);
+  }
+
+  const app = initializeApp(firebaseConfig);
+  window.db = getFirestore(app);
+
+  window.saveVisitToFirestore = async (data) => {
+    await addDoc(collection(window.db, 'visits'), {
+      restaurant: data.restaurant,
+      satisfaction: data.satisfaction,
+      actualCrowd: data.actualCrowd,
+      dow: data.dow,
+      hour: data.hour,
+      timestamp: data.timestamp || new Date(),
+    });
+  };
+</script>
 <script src="/utils.js"></script>
 <script src="/kst.js" defer></script>
 <script src="/campusDistance.js" defer></script>

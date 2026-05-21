@@ -65,70 +65,34 @@ window.CampusDistance = (function () {
     };
   }
 
-  function getWeatherPenalty(fromKey, restaurantKey) {
-    const wLbl =
-      (typeof document !== 'undefined' && document.getElementById('wLbl')?.textContent) || '';
-    const isBadWeather = /비|눈|흐림|우|설/.test(wLbl);
-    if (!isBadWeather) return 0;
-    const downhillFrom3gong = { '3공': ['명진당', '학생회관'] };
-    if (downhillFrom3gong[fromKey]?.includes(restaurantKey)) return -15;
-    return 0;
-  }
-
-  const ROUTE_BONUS = {
-    '3공_none': { 기숙사: 10, 명진당: 5, 교직원: 15, 학생회관: 5 },
-    '3공_5공': { 교직원: 20, 명진당: 10, 기숙사: -10, 학생회관: -5 },
-    '5공_3공': { 명진당: 15, 학생회관: 10, 기숙사: 5, 교직원: -5 },
-    '명진당_3공': { 명진당: 20, 교직원: 15, 기숙사: -5, 학생회관: 5 },
-  };
-
-  function scoreRestaurant(opts) {
-    const {
-      fromKey,
-      nextKey,
-      gapMin,
-      restaurantKey,
-      waitMin,
-      matchCount = 0,
-      mode = 'balance',
-      status = 'ok',
-    } = opts;
+  function scoreRestaurant({ fromKey, nextKey, gapMin, restaurantKey, waitMin, matchCount, mode, status }) {
     if (status === 'closed') return { score: -9999 };
     if (status === 'bad') return { score: -500 };
 
     const walk = walkToRest(fromKey, restaurantKey);
-    const back = nextKey === 'none' ? 0 : walkRestToBuilding(restaurantKey, nextKey);
-    const totalTime = walk + waitMin + EAT_MIN + back;
+    const back = nextKey === 'none' || !nextKey ? 0 : walkToRest(restaurantKey, nextKey);
 
+    const totalTime = walk + waitMin + 15 + back;
     const timeScore = Math.max(0, 100 - totalTime * 1.5);
     const waitScore = Math.max(0, 100 - waitMin * 2.5);
     const matchScore = Math.min(100, matchCount * 30);
 
-    const routeKey = `${fromKey}_${nextKey}`;
-    const routeBonus = (ROUTE_BONUS[routeKey] || {})[restaurantKey] || 0;
-    const weatherPenalty = getWeatherPenalty(fromKey, restaurantKey);
-
-    let weights = {};
+    let w = 1.0;
     try {
-      weights = JSON.parse(localStorage.getItem('restaurant_weights') || '{}');
-    } catch {
-      weights = {};
+      const weights = JSON.parse(localStorage.getItem('restaurant_weights') || '{}');
+      w = weights[restaurantKey] || 1.0;
+    } catch (e) {
+      /* ignore */
     }
-    const w = weights[restaurantKey] || 1.0;
 
     let score;
-    if (mode === 'balance') {
-      score = (timeScore * 0.4 + waitScore * 0.2 + matchScore * 0.4 + routeBonus + weatherPenalty) * w;
-    } else if (mode === 'distance') {
-      score = (timeScore * 0.75 + waitScore * 0.2 + matchScore * 0.05 + routeBonus * 1.5 + weatherPenalty) * w;
+    if (mode === 'distance') {
+      score = (timeScore * 0.75 + waitScore * 0.2 + matchScore * 0.05) * w;
     } else if (mode === 'food') {
-      score = (matchScore * 0.75 + timeScore * 0.15 + waitScore * 0.1 + routeBonus * 0.3 + weatherPenalty * 0.3) * w;
+      score = (matchScore * 0.75 + timeScore * 0.15 + waitScore * 0.1) * w;
     } else {
-      score = (timeScore * 0.4 + waitScore * 0.2 + matchScore * 0.4 + routeBonus + weatherPenalty) * w;
+      score = (timeScore * 0.4 + waitScore * 0.2 + matchScore * 0.4) * w;
     }
-
-    if (gapMin - totalTime < 0) score -= 200;
-    else if (gapMin - totalTime < 8) score -= 40;
 
     return { score: Math.round(score || 0) };
   }
@@ -142,6 +106,5 @@ window.CampusDistance = (function () {
     walkB2B,
     planRoundTrip,
     scoreRestaurant,
-    getWeatherPenalty,
   };
 })();

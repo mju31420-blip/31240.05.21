@@ -102,12 +102,13 @@ window.MealEngine = (function () {
 
   function platformUrl(platform, q) {
     const enc = encodeURIComponent(q);
+    if (platform === '배달의민족') return `https://www.baemin.com/search?q=${enc}`;
+    if (platform === '쿠팡이츠') return `https://www.coupangeats.com/search?q=${enc}`;
+    if (platform === '요기요') return `https://www.yogiyo.co.kr/search/?query=${enc}`;
     if (platform === '쿠팡') return `https://www.coupang.com/np/search?q=${enc}`;
     if (platform === '마켓컬리') return `https://www.marketkurly.com/search?sword=${enc}`;
-    if (platform === '배달의민족') return `https://www.baemin.com/search?q=${enc}`;
-    if (platform === '요기요') return `https://www.yogiyo.co.kr/mobile/search/${enc}`;
     if (platform === '네이버지도') return `https://map.naver.com/v5/search/${enc}`;
-    return `https://www.google.com/search?q=${enc}`;
+    return `https://map.naver.com/v5/search/${enc}`;
   }
 
   function shouldSuggestExternal(profile, bestMenus, mealIntent) {
