@@ -410,7 +410,7 @@ html.ob-lock,html.ob-lock body{overflow:hidden}
 <body>
 
 <!-- 간단 설정: 첫 실행 시 자동 표시 · ⚙️설정과 동일 -->
-<div class="ob-ov" id="obOv" aria-hidden="true">
+<div class="ob-ov" id="obOv" style="display:none">
   <div class="ob-sh" id="obSheet">
     <div class="ob-hd">
       <div class="ob-ico">🧠</div>
@@ -439,22 +439,6 @@ html.ob-lock,html.ob-lock body{overflow:hidden}
     </div>
   </div>
 </div>
-<script>
-  (function () {
-    try {
-      if (localStorage.getItem('mb_setup_done') !== '1') {
-        var ov = document.getElementById('obOv');
-        if (ov) {
-          ov.classList.add('on');
-          ov.style.display = 'flex';
-          ov.setAttribute('aria-hidden', 'false');
-          document.documentElement.classList.add('ob-lock');
-        }
-      }
-    } catch (e) {}
-  })();
-</script>
-
 <!-- MAIN APP -->
 <div class="shell">
 

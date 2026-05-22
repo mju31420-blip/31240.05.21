@@ -65,31 +65,39 @@ function markSetupComplete() {
 }
 
 function openSetupModal(firstLaunch = false) {
-  const ov = document.getElementById('obOv');
-  if (!ov) return;
+  const obOv = document.getElementById('obOv');
+  if (!obOv) return;
   tArr = [...(P.tastes || [])];
   hVal = P.home || '';
   syncSetupChips();
   const btn = document.getElementById('obSubmitBtn');
   if (btn) btn.textContent = firstLaunch ? '시작하기 →' : '저장하기 →';
-  ov.classList.add('on');
-  ov.style.display = 'flex';
-  ov.setAttribute('aria-hidden', 'false');
+  obOv.classList.add('on');
+  obOv.style.display = 'flex';
+  obOv.style.zIndex = '9999';
   document.documentElement.classList.add('ob-lock');
 }
 
 function closeSetupModal() {
-  const ov = document.getElementById('obOv');
-  if (!ov) return;
-  ov.classList.remove('on');
-  ov.style.display = 'none';
-  ov.setAttribute('aria-hidden', 'true');
+  const obOv = document.getElementById('obOv');
+  if (!obOv) return;
+  obOv.classList.remove('on');
+  obOv.style.display = 'none';
   document.documentElement.classList.remove('ob-lock');
 }
 
 function updateSetupOnLaunch() {
-  if (!isSetupComplete()) openSetupModal(true);
-  else closeSetupModal();
+  if (!isSetupComplete()) {
+    const obOv = document.getElementById('obOv');
+    if (obOv) {
+      obOv.classList.add('on');
+      obOv.style.display = 'flex';
+      obOv.style.zIndex = '9999';
+      document.documentElement.classList.add('ob-lock');
+    }
+  } else {
+    closeSetupModal();
+  }
 }
 
 function doneOb() {
@@ -2394,7 +2402,6 @@ function showToast(msg) {
 
 async function bootApp() {
   loadProfile();
-  updateSetupOnLaunch();
   if (typeof TimetableUtil !== 'undefined' && TimetableUtil.populateBuildingSelects) {
     TimetableUtil.populateBuildingSelects();
   }
