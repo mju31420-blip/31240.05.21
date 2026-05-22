@@ -3,7 +3,11 @@ import { defineSecret } from 'firebase-functions/params';
 import express from 'express';
 import cors from 'cors';
 import { getMenus } from './services/menuCache.js';
-import { analyzeTimetableImage } from './services/scheduleAnalyzer.js';
+import {
+  analyzeTimetableImage,
+  estimateBase64DecodedBytes,
+  MAX_TIMETABLE_IMAGE_BYTES,
+} from './services/scheduleAnalyzer.js';
 import { sendSuggestionEmail } from './services/suggestMail.js';
 
 const anthropicApiKey = defineSecret('ANTHROPIC_API_KEY');
@@ -61,8 +65,16 @@ app.post(['/api/analyze/timetable', '/analyze/timetable'], async (req, res) => {
     if (!imageBase64) {
       return res.status(400).json({ ok: false, error: 'imageBase64가 필요합니다' });
     }
+    const b64 = String(imageBase64).replace(/^data:image\/\w+;base64,/, '').trim();
+    if (estimateBase64DecodedBytes(b64) > MAX_TIMETABLE_IMAGE_BYTES) {
+      return res.status(400).json({
+        ok: false,
+        error: '이미지 크기는 5MB 이하여야 합니다.',
+        code: 'IMAGE_TOO_LARGE',
+      });
+    }
     const result = await analyzeTimetableImage({
-      imageBase64: String(imageBase64).replace(/^data:image\/\w+;base64,/, ''),
+      imageBase64: b64,
       mediaType: mediaType || 'image/jpeg',
     });
     res.json({
@@ -72,14 +84,15 @@ app.post(['/api/analyze/timetable', '/analyze/timetable'], async (req, res) => {
       nextTxt: result.nextTxt,
       gapMin: result.gapMin,
       nextKey: result.nextKey,
+      classes: Array.isArray(result.classes) ? result.classes : [],
       mealIntent: result.mealIntent,
-      classes: result.classes || result.수업 || [],
       warnings: result.warnings || [],
       gapSource: result.gapSource || '',
     });
   } catch (err) {
     console.error('[api/analyze/timetable]', err.message);
-    const status = err.code === 'NO_API_KEY' ? 503 : 500;
+    const status =
+      err.code === 'NO_API_KEY' ? 503 : err.code === 'IMAGE_TOO_LARGE' || err.code === 'IMAGE_EMPTY' ? 400 : 500;
     res.status(status).json({ ok: false, error: err.message, code: err.code });
   }
 });

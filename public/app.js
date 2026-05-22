@@ -441,7 +441,7 @@ function refineScheduleAnalysis(api = {}) {
   let classes = [];
 
   if (typeof TimetableUtil !== 'undefined') {
-    const fromApi = TimetableUtil.normalizeClassesFromAi(api.classes || api.수업 || [], ref.getDay());
+    const fromApi = TimetableUtil.normalizeClassesFromAi(api.classes || [], ref.getDay());
     if (fromApi.length) {
       classes = TimetableUtil.mergeTimetableClasses(TimetableUtil.loadUserTimetable(), fromApi);
       TimetableUtil.saveUserTimetable(classes);
@@ -590,9 +590,16 @@ async function doAnalyzeFromTimetable() {
   await applyScheduleAnalysis({ ...snap, gapSource: 'saved_timetable', warnings: [] }, '저장 시간표 분석');
 }
 
+const MAX_TIMETABLE_IMAGE_BYTES = 5 * 1024 * 1024;
+
 function handleFile(e) {
   const f = e.target.files[0];
   if (!f) return;
+  if (f.size > MAX_TIMETABLE_IMAGE_BYTES) {
+    showToast('이미지는 5MB 이하여야 합니다. 해상도를 낮춰 주세요.');
+    e.target.value = '';
+    return;
+  }
   imgMediaType = f.type || 'image/jpeg';
   const r = new FileReader();
   r.onload = (ev) => {
@@ -2062,6 +2069,11 @@ async function doAnalyzeImg() {
     document.getElementById('ldg').classList.remove('on');
 
     if (!data.ok) {
+      document.getElementById('btnImg').disabled = false;
+      if (data.code === 'IMAGE_TOO_LARGE') {
+        showToast('이미지는 5MB 이하여야 합니다');
+        return;
+      }
       throw new Error(data.error || '분석 실패');
     }
 
