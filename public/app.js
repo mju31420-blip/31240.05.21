@@ -30,9 +30,33 @@ function togChip(el, g) {
     const v = el.dataset.v;
     tArr = el.classList.contains('on') ? [...tArr, v] : tArr.filter((x) => x !== v);
   } else {
-    document.querySelectorAll('#homeG .chip').forEach((c) => c.classList.remove('on'));
-    el.classList.add('on');
     hVal = el.dataset.v;
+  }
+  syncSetupChips();
+}
+
+function syncSetupChips() {
+  document.querySelectorAll('.chip-taste').forEach((c) => {
+    c.classList.toggle('on', tArr.includes(c.dataset.v));
+  });
+  const homeNorm = normalizeHomeValue(hVal);
+  document.querySelectorAll('.chip-home').forEach((c) => {
+    c.classList.toggle('on', c.dataset.v === homeNorm);
+  });
+}
+
+function needsSetupBanner() {
+  return P.name === '명지인';
+}
+
+function updateSetupBannerVisibility() {
+  const banner = document.getElementById('setupBanner');
+  if (!banner) return;
+  if (needsSetupBanner()) {
+    banner.classList.add('on');
+    syncSetupChips();
+  } else {
+    banner.classList.remove('on');
   }
 }
 
@@ -44,10 +68,12 @@ function doneOb() {
   document.getElementById('hpName').textContent = P.name;
   document.getElementById('hpHome').textContent = P.home || '거주 미설정';
   document.getElementById('obOv').style.display = 'none';
+  updateSetupBannerVisibility();
   saveProfile();
   updateLearnedDisplay();
   renderHeaderTasteChips();
   drawShuttle();
+  if (lastData) drawFood();
   setTimeout(() => moveInk(document.querySelector('.tb.on')), 60);
 }
 
@@ -73,10 +99,11 @@ function loadProfile() {
     hVal = P.home;
     document.getElementById('hpName').textContent = P.name === '명지인' ? '주인님' : P.name;
     document.getElementById('hpHome').textContent = P.home || '거주 미설정';
-    if (P.name && P.name !== '명지인') document.getElementById('obOv').style.display = 'none';
   } catch (e) {
     console.warn('profile load', e);
   }
+  document.getElementById('obOv').style.display = 'none';
+  updateSetupBannerVisibility();
   updateLearnedDisplay();
   renderHeaderTasteChips();
   updateSavedTimetableUi();
@@ -508,19 +535,14 @@ function buildScheduleComment(cur, nextKey, gapMin, mealIntent, scheduleMeta = {
   const lines = [];
   const dow = scheduleMeta.dowLabel || '';
   const todayCount = scheduleMeta.todayCount ?? null;
-  const weekly = scheduleMeta.weeklyLine || '';
   const src = scheduleMeta.gapSource || '';
   const fromTimetable = src.includes('classes') || src === 'timetable_classes';
 
   if (fromTimetable) {
-    if (todayCount === 0 && weekly) {
+    if (todayCount === 0) {
       lines.push(`📅 오늘(${dow}) 수업 없음 · 여유 ${formatGapMinutesLabel(gapMin)}`);
-      lines.push(`📊 주간 시간표 — ${weekly}`);
-    } else if (todayCount === 0) {
-      lines.push(`📅 ${dow}요일 수업 없음 · 여유 ${formatGapMinutesLabel(gapMin)}`);
     } else if (scheduleMeta.gapDetail) {
       lines.push(`📅 ${scheduleMeta.gapDetail}`);
-      if (weekly) lines.push(`📊 주간 — ${weekly}`);
     } else {
       lines.push(`📅 ${dow}요일 ${todayCount}개 수업 · 공강 ${formatGapMinutesLabel(gapMin)}`);
     }
@@ -841,12 +863,7 @@ function openSettings() {
   document.getElementById('obOv').style.display = 'flex';
   tArr = [...(P.tastes || [])];
   hVal = P.home || '';
-  document.querySelectorAll('#tasteG .chip').forEach((c) => {
-    c.classList.toggle('on', tArr.includes(c.dataset.v));
-  });
-  document.querySelectorAll('#homeG .chip').forEach((c) => {
-    c.classList.toggle('on', c.dataset.v === normalizeHomeValue(hVal));
-  });
+  syncSetupChips();
 }
 
 const HEADER_TASTES = CUISINE_TYPES;
