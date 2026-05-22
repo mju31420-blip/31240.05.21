@@ -2237,14 +2237,17 @@ async function submitSg() {
     showToast('내용을 입력해주세요');
     return;
   }
-  const type = document.querySelector('.stype.on')?.textContent?.trim() || '기타';
+  const type =
+    document.querySelector('.stype.on')?.dataset?.type ||
+    document.querySelector('.stype.on')?.textContent?.trim() ||
+    '기타';
   const replyEmail = document.getElementById('sgEmail')?.value?.trim() || '';
   const btn = document.querySelector('#sgForm .btnm');
   if (btn) btn.disabled = true;
   try {
     const res = await fetch('/api/suggest', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify({ type, body, name: P.name, home: P.home, replyEmail }),
     });
     const data = await res.json();

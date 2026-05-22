@@ -611,11 +611,11 @@ body{display:flex;justify-content:center;overscroll-behavior-y:none;-webkit-over
       <div id="sgForm">
         <div class="slbl">유형 선택</div>
         <div class="stype-g">
-          <div class="stype on" onclick="selSt(this)">✨ 기능 요청</div>
-          <div class="stype" onclick="selSt(this)">🐛 버그 신고</div>
-          <div class="stype" onclick="selSt(this)">🍽️ 식당 오류</div>
-          <div class="stype" onclick="selSt(this)">🚌 셔틀 오류</div>
-          <div class="stype" onclick="selSt(this)">💬 기타</div>
+          <div class="stype on" data-type="기능 요청" onclick="selSt(this)">✨ 기능 요청</div>
+          <div class="stype" data-type="버그 신고" onclick="selSt(this)">🐛 버그 신고</div>
+          <div class="stype" data-type="식당 오류" onclick="selSt(this)">🍽️ 식당 오류</div>
+          <div class="stype" data-type="셔틀 오류" onclick="selSt(this)">🚌 셔틀 오류</div>
+          <div class="stype" data-type="기타" onclick="selSt(this)">💬 기타</div>
         </div>
         <div class="slbl">예시 클릭으로 빠르게 입력</div>
         <div>

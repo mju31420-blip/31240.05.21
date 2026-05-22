@@ -104,7 +104,6 @@ function applySecrets() {
   if (smtpUser.value()) process.env.SMTP_USER = smtpUser.value();
   if (smtpPass.value()) process.env.SMTP_PASS = smtpPass.value();
   if (suggestToEmail.value()) process.env.SUGGEST_TO_EMAIL = suggestToEmail.value();
-  process.env.SMTP_FROM = process.env.SMTP_FROM || process.env.SMTP_USER;
 }
 
 export const api = onRequest(
