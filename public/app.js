@@ -46,7 +46,7 @@ function syncSetupChips() {
 }
 
 function needsSetupBanner() {
-  return P.name === '명지인';
+  return P.setupDone !== true;
 }
 
 function updateSetupBannerVisibility() {
@@ -54,9 +54,11 @@ function updateSetupBannerVisibility() {
   if (!banner) return;
   if (needsSetupBanner()) {
     banner.classList.add('on');
+    banner.style.display = 'block';
     syncSetupChips();
   } else {
     banner.classList.remove('on');
+    banner.style.display = 'none';
   }
 }
 
@@ -65,6 +67,7 @@ function doneOb() {
   P.tastes = [...tArr];
   P.home = normalizeHomeValue(hVal);
   P.diet = false;
+  P.setupDone = true;
   document.getElementById('hpName').textContent = P.name;
   document.getElementById('hpHome').textContent = P.home || '거주 미설정';
   document.getElementById('obOv').style.display = 'none';
@@ -88,21 +91,26 @@ function saveProfile() {
 function loadProfile() {
   try {
     const raw = localStorage.getItem('profile');
-    if (!raw) return;
-    const saved = JSON.parse(raw);
-    P = { ...P, ...saved };
-    P.tastes = (P.tastes || []).filter((t) => CUISINE_TYPES.includes(t));
-    const prevHome = P.home || '';
-    P.home = normalizeHomeValue(prevHome);
-    if (P.home !== prevHome) saveProfile();
-    tArr = [...P.tastes];
-    hVal = P.home;
+    if (raw) {
+      const saved = JSON.parse(raw);
+      P = { ...P, ...saved };
+      P.tastes = (P.tastes || []).filter((t) => CUISINE_TYPES.includes(t));
+      const prevHome = P.home || '';
+      P.home = normalizeHomeValue(prevHome);
+      if (P.name && P.name !== '명지인' && P.setupDone !== true) {
+        P.setupDone = true;
+      }
+      if (P.home !== prevHome || P.setupDone === true) saveProfile();
+      tArr = [...P.tastes];
+      hVal = P.home;
+    }
     document.getElementById('hpName').textContent = P.name === '명지인' ? '주인님' : P.name;
     document.getElementById('hpHome').textContent = P.home || '거주 미설정';
   } catch (e) {
     console.warn('profile load', e);
   }
-  document.getElementById('obOv').style.display = 'none';
+  const ob = document.getElementById('obOv');
+  if (ob) ob.style.display = 'none';
   updateSetupBannerVisibility();
   updateLearnedDisplay();
   renderHeaderTasteChips();
@@ -2331,6 +2339,7 @@ function showToast(msg) {
 
 async function bootApp() {
   loadProfile();
+  updateSetupBannerVisibility();
   if (typeof TimetableUtil !== 'undefined' && TimetableUtil.populateBuildingSelects) {
     TimetableUtil.populateBuildingSelects();
   }
