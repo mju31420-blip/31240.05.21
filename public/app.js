@@ -1,5 +1,7 @@
 /* ════════════════════════════ PROFILE ════ */
 const SETUP_DONE_KEY = 'mb_setup_done';
+/** 배포·캐시 확인용 — 콘솔에서 window.MB_APP_BUILD 로 확인 */
+const MB_APP_BUILD = '2026-05-22-fix2';
 let P = { name: '명지인', tastes: [], home: '', diet: false };
 let tArr = [],
   hVal = '';
@@ -114,7 +116,6 @@ function loadProfile() {
       P.tastes = (P.tastes || []).filter((t) => CUISINE_TYPES.includes(t));
       const prevHome = P.home || '';
       P.home = normalizeHomeValue(prevHome);
-      if (P.name && P.name !== '명지인') markSetupComplete();
       if (P.home !== prevHome) saveProfile();
       tArr = [...P.tastes];
       hVal = P.home;
@@ -624,14 +625,19 @@ async function applyScheduleAnalysis(rawApi, sourceLabel = '분석') {
   const ocrUsed = /AI|이미지|OCR/i.test(sourceLabel);
   const data = refineScheduleAnalysis(rawApi);
   if (data.scheduleMeta && ocrUsed) data.scheduleMeta.ocrUsed = true;
+  let analyzeSource = 'timetable_classes';
+  if (ocrUsed) analyzeSource = 'timetable_image';
+  else if (rawApi.gapSource === 'saved_timetable' || /저장/i.test(sourceLabel)) analyzeSource = 'saved_timetable';
   const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
   const mealIntent = data.mealIntent || MealEngine.computeMealIntent(data.gapMin, ref);
   const period = mealIntent.period || (ref.getHours() >= 17 ? 'dinner' : 'lunch');
-  const comment = buildScheduleComment(data.curKey, data.nextKey, data.gapMin, mealIntent, data.scheduleMeta);
+  const scheduleMeta = { ...data.scheduleMeta, gapSource: analyzeSource };
+  const comment = buildScheduleComment(data.curKey, data.nextKey, data.gapMin, mealIntent, scheduleMeta);
   buildAndRender(data.curKey, data.curTxt, data.nextTxt, data.gapMin, period, {
+    analyzeSource,
     mealIntent,
     nextKey: data.nextKey,
-    scheduleMeta: data.scheduleMeta,
+    scheduleMeta,
     aiComment: comment,
   });
   fillManualFromAnalysis(data);
@@ -1020,11 +1026,13 @@ async function doAnalyze() {
   const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
   const mealIntent = MealEngine.computeMealIntent(gapMin, ref);
   const period = mealIntent.period;
+  const scheduleMeta = { gapSource: 'manual', timeline: [], warnings: [] };
   buildAndRender(cur, curTxt, nxtTxt, gapMin, period, {
+    analyzeSource: 'manual',
     mealIntent,
     nextKey,
-    scheduleMeta: { gapSource: 'manual', timeline: [], warnings: [] },
-    aiComment: buildScheduleComment(cur, nextKey, gapMin, mealIntent, { gapSource: 'manual' }),
+    scheduleMeta,
+    aiComment: buildScheduleComment(cur, nextKey, gapMin, mealIntent, scheduleMeta),
   });
 }
 
@@ -1123,7 +1131,11 @@ function buildAndRender(cur, curTxt, nxtTxt, gapMin, period, extra = {}) {
   const bestMenus = best ? 식당[best].메뉴 : [];
   const external = MealEngine.shouldSuggestExternal(P, bestMenus, mealIntent);
 
+  const analyzeSource =
+    extra.analyzeSource || extra.scheduleMeta?.gapSource || 'manual';
+
   lastData = {
+    analyzeSource,
     현재건물키: cur,
     현재위치: curTxt,
     다음수업: nxtTxt,
@@ -1207,6 +1219,17 @@ function buildTomorrow(cur, period) {
   };
 }
 
+function resolveAnalyzeComment(d) {
+  const meta = d.scheduleMeta || {};
+  const src = d.analyzeSource || meta.gapSource || 'manual';
+  const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
+  const mealIntent = d.mealIntent || MealEngine.computeMealIntent(d.공강분 || 75, ref);
+  return buildScheduleComment(d.현재건물키 || '3공', d.nextKey || 'none', d.공강분 || 75, mealIntent, {
+    ...meta,
+    gapSource: src,
+  });
+}
+
 function drawBoard() {
   const d = lastData;
   const meta = d.scheduleMeta || {};
@@ -1243,7 +1266,7 @@ function drawBoard() {
   document.getElementById('schBd').classList.add('on');
   document.getElementById('aiBox').classList.add('on');
   document.getElementById('aiTxt').innerHTML = '';
-  typeText('aiTxt', d.총평 || '분석 완료되었습니다.');
+  typeText('aiTxt', resolveAnalyzeComment(d) || d.총평 || '분석 완료되었습니다.');
 }
 
 function drawAltFood() {
@@ -2390,4 +2413,5 @@ async function tryAutoAnalyzeFromSavedTimetable() {
   }
 }
 
+window.MB_APP_BUILD = MB_APP_BUILD;
 bootApp();

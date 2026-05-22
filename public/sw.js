@@ -1,11 +1,10 @@
 /* eslint-disable no-restricted-globals */
 /**
  * 명비서 PWA Service Worker
- * - 앱 셸·정적 자산: stale-while-revalidate
- * - API·실시간 데이터: 네트워크 우선 (캐시하지 않음)
- * - 오프라인: 셸(index.html) 폴백
+ * - HTML/JS: 네트워크 우선 (배포 후에도 예전 app.js가 안 남게)
+ * - API: 캐시 안 함
  */
-const SW_VERSION = 'mb-pwa-2';
+const SW_VERSION = 'mb-pwa-3';
 const STATIC_CACHE = `static-${SW_VERSION}`;
 const SHELL_CACHE = `shell-${SW_VERSION}`;
 
@@ -16,6 +15,9 @@ const PRECACHE_URLS = [
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/icons/apple-touch-icon.png',
+];
+
+const APP_JS = [
   '/utils.js',
   '/kst.js',
   '/schoolCalendar.js',
@@ -24,10 +26,6 @@ const PRECACHE_URLS = [
   '/mealEngine.js',
   '/app.js',
   '/analytics-sync.js',
-  '/data/kr-holidays.json',
-  '/data/crowd-model.json',
-  '/data/campus-walk.json',
-  '/data/campus_schedule.json',
 ];
 
 const STATIC_EXT = /\.(?:js|json|css|png|jpg|jpeg|webp|svg|woff2?)$/i;
@@ -42,6 +40,10 @@ function isNavigationRequest(request) {
 
 function isSameOrigin(url) {
   return url.origin === self.location.origin;
+}
+
+function isAppScript(pathname) {
+  return APP_JS.includes(pathname);
 }
 
 self.addEventListener('install', (event) => {
@@ -59,40 +61,28 @@ self.addEventListener('activate', (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(
-          keys
-            .filter((key) => key !== STATIC_CACHE && key !== SHELL_CACHE)
-            .map((key) => caches.delete(key))
-        )
+        Promise.all(keys.filter((key) => !key.includes(SW_VERSION)).map((key) => caches.delete(key)))
       )
       .then(() => self.clients.claim())
   );
 });
 
-async function staleWhileRevalidate(request, cacheName) {
+/** JS/HTML은 항상 네트워크 먼저 — stale 캐시로 구버전이 안 보이게 */
+async function networkFirst(request, cacheName) {
   const cache = await caches.open(cacheName);
-  const cached = await cache.match(request);
-  const networkPromise = fetch(request)
-    .then((response) => {
-      if (response.ok) cache.put(request, response.clone());
-      return response;
-    })
-    .catch(() => null);
-
-  return cached || networkPromise || fetch(request);
-}
-
-async function networkFirstShell(request) {
-  const cache = await caches.open(SHELL_CACHE);
   try {
     const response = await fetch(request);
-    if (response.ok) cache.put('/index.html', response.clone());
+    if (response.ok) cache.put(request, response.clone());
     return response;
   } catch {
-    const cached = (await cache.match(request)) || (await cache.match('/index.html'));
+    const cached = await cache.match(request);
     if (cached) return cached;
     throw new Error('offline');
   }
+}
+
+async function networkFirstShell(request) {
+  return networkFirst(request, SHELL_CACHE);
 }
 
 self.addEventListener('fetch', (event) => {
@@ -106,13 +96,13 @@ self.addEventListener('fetch', (event) => {
 
   if (url.pathname === '/dashboard.html') return;
 
-  if (isNavigationRequest(request)) {
-    event.respondWith(networkFirstShell(request));
+  if (isNavigationRequest(request) || isAppScript(url.pathname) || url.pathname === '/sw.js') {
+    event.respondWith(networkFirst(request, isNavigationRequest(request) ? SHELL_CACHE : STATIC_CACHE));
     return;
   }
 
   if (STATIC_EXT.test(url.pathname) || url.pathname.startsWith('/data/')) {
-    event.respondWith(staleWhileRevalidate(request, STATIC_CACHE));
+    event.respondWith(networkFirst(request, STATIC_CACHE));
   }
 });
 
