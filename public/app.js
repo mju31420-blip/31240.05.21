@@ -1,4 +1,5 @@
 /* ════════════════════════════ PROFILE ════ */
+const SETUP_DONE_KEY = 'mb_setup_done';
 let P = { name: '명지인', tastes: [], home: '', diet: false };
 let tArr = [],
   hVal = '';
@@ -45,8 +46,24 @@ function syncSetupChips() {
   });
 }
 
+function isSetupComplete() {
+  try {
+    return localStorage.getItem(SETUP_DONE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markSetupComplete() {
+  try {
+    localStorage.setItem(SETUP_DONE_KEY, '1');
+  } catch (e) {
+    console.warn('setup save', e);
+  }
+}
+
 function needsSetupBanner() {
-  return P.setupDone !== true;
+  return !isSetupComplete();
 }
 
 function updateSetupBannerVisibility() {
@@ -67,7 +84,7 @@ function doneOb() {
   P.tastes = [...tArr];
   P.home = normalizeHomeValue(hVal);
   P.diet = false;
-  P.setupDone = true;
+  markSetupComplete();
   document.getElementById('hpName').textContent = P.name;
   document.getElementById('hpHome').textContent = P.home || '거주 미설정';
   document.getElementById('obOv').style.display = 'none';
@@ -97,10 +114,8 @@ function loadProfile() {
       P.tastes = (P.tastes || []).filter((t) => CUISINE_TYPES.includes(t));
       const prevHome = P.home || '';
       P.home = normalizeHomeValue(prevHome);
-      if (P.name && P.name !== '명지인' && P.setupDone !== true) {
-        P.setupDone = true;
-      }
-      if (P.home !== prevHome || P.setupDone === true) saveProfile();
+      if (P.name && P.name !== '명지인') markSetupComplete();
+      if (P.home !== prevHome) saveProfile();
       tArr = [...P.tastes];
       hVal = P.home;
     }
@@ -555,10 +570,16 @@ function buildScheduleComment(cur, nextKey, gapMin, mealIntent, scheduleMeta = {
       lines.push(`📅 ${dow}요일 ${todayCount}개 수업 · 공강 ${formatGapMinutesLabel(gapMin)}`);
     }
   } else if (src === 'saved_timetable') {
-    lines.push(`📅 저장 시간표 · ${dow}요일 공강 ${formatGapMinutesLabel(gapMin)}`);
+    lines.push(`📅 저장된 시간표 기준 · ${dow}요일 공강 ${formatGapMinutesLabel(gapMin)}`);
     if (scheduleMeta.gapDetail && todayCount !== 0) lines.push(scheduleMeta.gapDetail);
-  } else {
+  } else if (src === 'manual') {
+    lines.push('✏️ 수동으로 입력한 위치·공강 기준으로 분석했어요.');
+  } else if (src === 'timetable_image' || scheduleMeta.ocrUsed) {
     lines.push('🤖 시간표 이미지에서 수업 시간을 읽었어요.');
+  } else if (src === 'ai') {
+    lines.push('🤖 시간표 이미지 분석 결과를 반영했어요.');
+  } else {
+    lines.push('📅 시간표 기준으로 분석했어요.');
   }
 
   if (mealIntent?.reason) lines.push(`🍽️ ${mealIntent.reason}`);
@@ -600,7 +621,9 @@ function fillManualFromTimetable() {
 
 async function applyScheduleAnalysis(rawApi, sourceLabel = '분석') {
   await ensureMenus();
+  const ocrUsed = /AI|이미지|OCR/i.test(sourceLabel);
   const data = refineScheduleAnalysis(rawApi);
+  if (data.scheduleMeta && ocrUsed) data.scheduleMeta.ocrUsed = true;
   const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
   const mealIntent = data.mealIntent || MealEngine.computeMealIntent(data.gapMin, ref);
   const period = mealIntent.period || (ref.getHours() >= 17 ? 'dinner' : 'lunch');

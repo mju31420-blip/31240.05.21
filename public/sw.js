@@ -5,7 +5,7 @@
  * - API·실시간 데이터: 네트워크 우선 (캐시하지 않음)
  * - 오프라인: 셸(index.html) 폴백
  */
-const SW_VERSION = 'mb-pwa-1';
+const SW_VERSION = 'mb-pwa-2';
 const STATIC_CACHE = `static-${SW_VERSION}`;
 const SHELL_CACHE = `shell-${SW_VERSION}`;
 

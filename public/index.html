@@ -517,6 +517,19 @@ body{display:flex;justify-content:center;overscroll-behavior-y:none;-webkit-over
     </div>
     <button type="button" class="btn-ob" onclick="doneOb()">시작하기 →</button>
   </div>
+  <script>
+    (function () {
+      try {
+        if (localStorage.getItem('mb_setup_done') !== '1') {
+          var b = document.getElementById('setupBanner');
+          if (b) {
+            b.classList.add('on');
+            b.style.display = 'block';
+          }
+        }
+      } catch (e) {}
+    })();
+  </script>
 
   <div class="data-phase-banner" role="note">
     <span class="data-phase-ico" aria-hidden="true">📊</span>
