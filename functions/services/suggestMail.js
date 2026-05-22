@@ -26,10 +26,17 @@ function resolveFrom() {
 }
 
 function getTransport() {
-  const host = process.env.SMTP_HOST;
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-  if (!host || !user || !pass) return null;
+  const host = (process.env.SMTP_HOST || '').trim();
+  const user = (process.env.SMTP_USER || '').trim();
+  const pass = (process.env.SMTP_PASS || '').trim();
+  if (!user || !pass) return null;
+
+  if (!host || host.includes('gmail.com')) {
+    return nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user, pass },
+    });
+  }
 
   const port = parseInt(process.env.SMTP_PORT || '587', 10);
   const secure = process.env.SMTP_SECURE === 'true';
@@ -52,24 +59,47 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
+export function getMailConfigStatus() {
+  const to = (process.env.SUGGEST_TO_EMAIL || '').trim();
+  const user = (process.env.SMTP_USER || '').trim();
+  const pass = (process.env.SMTP_PASS || '').trim();
+  const host = (process.env.SMTP_HOST || '').trim();
+  return {
+    hasTo: Boolean(to),
+    hasSmtp: Boolean(user && pass),
+    host: host || (user ? 'gmail (service)' : ''),
+  };
+}
+
 export async function sendSuggestionEmail(payload) {
   const to = (process.env.SUGGEST_TO_EMAIL || '').trim();
   const from = resolveFrom();
   if (!to) {
-    const err = new Error('SUGGEST_TO_EMAIL이 설정되지 않았습니다.');
+    const err = new Error('SUGGEST_TO_EMAIL이 설정되지 않았습니다. Firebase Secret을 확인해 주세요.');
     err.code = 'NO_MAIL_CONFIG';
     throw err;
   }
   if (!from?.address) {
-    const err = new Error('SMTP_USER가 설정되지 않았습니다.');
+    const err = new Error('SMTP_USER가 설정되지 않았습니다. Firebase Secret을 확인해 주세요.');
     err.code = 'NO_SMTP';
     throw err;
   }
 
   const transport = getTransport();
   if (!transport) {
-    const err = new Error('SMTP 설정이 없습니다 (SMTP_HOST, SMTP_USER, SMTP_PASS).');
+    const err = new Error('SMTP 설정이 없습니다 (SMTP_USER, SMTP_PASS). Gmail 앱 비밀번호를 사용하세요.');
     err.code = 'NO_SMTP';
+    throw err;
+  }
+
+  try {
+    await transport.verify();
+  } catch (verifyErr) {
+    console.error('[suggest] SMTP verify failed', verifyErr.message);
+    const err = new Error(
+      `메일 서버 연결 실패: ${verifyErr.message}. Gmail 앱 비밀번호·2단계 인증을 확인해 주세요.`,
+    );
+    err.code = 'SMTP_AUTH';
     throw err;
   }
 

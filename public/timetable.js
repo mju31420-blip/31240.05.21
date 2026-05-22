@@ -286,11 +286,11 @@ function formatWeeklyDowLine(classes) {
   const counts = summarizeByDow(classes);
   const parts = [];
   for (let d = 1; d <= 5; d++) {
-    if (counts[d]) parts.push(`${DOW_NAMES[d]} ${counts[d]}`);
+    if (counts[d]) parts.push(`${DOW_NAMES[d]} ${counts[d]}과목`);
   }
-  if (counts[6]) parts.push(`${DOW_NAMES[6]} ${counts[6]}`);
-  if (counts[0]) parts.push(`${DOW_NAMES[0]} ${counts[0]}`);
-  return parts.length ? `주간: ${parts.join(' · ')}` : '';
+  if (counts[6]) parts.push(`${DOW_NAMES[6]} ${counts[6]}과목`);
+  if (counts[0]) parts.push(`${DOW_NAMES[0]} ${counts[0]}과목`);
+  return parts.length ? parts.join(' · ') : '';
 }
 
 function formatGapDetail(snap, refDate = null) {
@@ -302,7 +302,7 @@ function formatGapDetail(snap, refDate = null) {
       ? `${dowLabel}요일 · 공휴일 (학교 휴무)`
       : `${dowLabel}요일 · 주말 (학교 휴무)`;
   }
-  if (!today.length) return `${dowLabel}요일 — 등록된 수업 없음`;
+  if (!today.length) return `${dowLabel}요일 수업 없음`;
 
   if (snap.inClass) {
     const en = snap.inClass.end;

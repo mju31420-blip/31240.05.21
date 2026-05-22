@@ -499,31 +499,54 @@ function refineScheduleAnalysis(api = {}) {
   };
 }
 
+function formatGapMinutesLabel(gapMin) {
+  if (gapMin >= 120) return `${gapMin}분(2시간 이상)`;
+  return `${gapMin}분`;
+}
+
 function buildScheduleComment(cur, nextKey, gapMin, mealIntent, scheduleMeta = {}) {
-  const parts = [];
-  if (scheduleMeta.gapSource?.includes('classes') || scheduleMeta.gapSource === 'timetable_classes') {
-    const dow = scheduleMeta.dowLabel || '';
-    const n = scheduleMeta.todayCount != null ? `${scheduleMeta.todayCount}개 수업 · ` : '';
-    parts.push(`📅 ${dow}요일 ${n}시간표 기준 공강 ${gapMin}분`);
-    if (scheduleMeta.gapDetail) parts.push(scheduleMeta.gapDetail);
-    if (scheduleMeta.weeklyLine) parts.push(`요일별: ${scheduleMeta.weeklyLine}`);
-  } else if (scheduleMeta.gapSource === 'saved_timetable') {
-    parts.push(`📅 저장 시간표 · ${scheduleMeta.dowLabel || ''}요일 공강 ${gapMin}분`);
-    if (scheduleMeta.gapDetail) parts.push(scheduleMeta.gapDetail);
+  const lines = [];
+  const dow = scheduleMeta.dowLabel || '';
+  const todayCount = scheduleMeta.todayCount ?? null;
+  const weekly = scheduleMeta.weeklyLine || '';
+  const src = scheduleMeta.gapSource || '';
+  const fromTimetable = src.includes('classes') || src === 'timetable_classes';
+
+  if (fromTimetable) {
+    if (todayCount === 0 && weekly) {
+      lines.push(`📅 오늘(${dow}) 수업 없음 · 여유 ${formatGapMinutesLabel(gapMin)}`);
+      lines.push(`📊 주간 시간표 — ${weekly}`);
+    } else if (todayCount === 0) {
+      lines.push(`📅 ${dow}요일 수업 없음 · 여유 ${formatGapMinutesLabel(gapMin)}`);
+    } else if (scheduleMeta.gapDetail) {
+      lines.push(`📅 ${scheduleMeta.gapDetail}`);
+      if (weekly) lines.push(`📊 주간 — ${weekly}`);
+    } else {
+      lines.push(`📅 ${dow}요일 ${todayCount}개 수업 · 공강 ${formatGapMinutesLabel(gapMin)}`);
+    }
+  } else if (src === 'saved_timetable') {
+    lines.push(`📅 저장 시간표 · ${dow}요일 공강 ${formatGapMinutesLabel(gapMin)}`);
+    if (scheduleMeta.gapDetail && todayCount !== 0) lines.push(scheduleMeta.gapDetail);
   } else {
-    parts.push('🤖 AI가 시간표 이미지에서 건물·공강을 읽었어요. (혼잡도는 학기 스케줄 데이터 사용)');
+    lines.push('🤖 시간표 이미지에서 수업 시간을 읽었어요.');
   }
-  parts.push(mealIntent?.reason || '');
-  if (gapMin < 45) parts.push('공강이 짧아 가까운 식당·빠른 동선을 우선 추천합니다.');
-  else if (gapMin >= 120) parts.push('여유 공강 — 취향·메뉴 매칭을 넉넉히 볼 수 있어요.');
+
+  if (mealIntent?.reason) lines.push(`🍽️ ${mealIntent.reason}`);
+
+  if (gapMin < 45) {
+    lines.push('⏱️ 공강이 짧아요 — 가까운 식당·빠른 동선을 우선 추천합니다.');
+  } else if (gapMin >= 120 && !mealIntent?.longGap) {
+    lines.push('✨ 여유 있어요 — 취향·메뉴를 천천히 골라볼 수 있어요.');
+  }
+
   if (nextKey && nextKey !== 'none' && typeof CampusDistance !== 'undefined') {
     const walk = CampusDistance.walkB2B(cur, nextKey);
-    parts.push(`다음 수업까지 도보 복귀 약 ${walk}분 — 식사+이동 시간을 함께 반영했어요.`);
+    lines.push(`🚶 다음 수업까지 도보 약 ${walk}분 (식사·이동 시간 반영)`);
   }
   if (scheduleMeta.warnings?.length) {
-    parts.push(`ℹ️ ${scheduleMeta.warnings.join(' ')}`);
+    lines.push(`ℹ️ ${scheduleMeta.warnings.join(' ')}`);
   }
-  return parts.filter(Boolean).join(' ');
+  return lines.filter(Boolean).join('\n');
 }
 
 function fillManualFromAnalysis(data) {
@@ -2094,12 +2117,16 @@ async function doAnalyzeImg() {
 
 function typeText(eid, text, sp = 18) {
   const el = document.getElementById(eid);
+  const raw = String(text);
+  const htmlFull = raw.replace(/\n/g, '<br>');
   let i = 0;
   el.innerHTML = '';
   const t = setInterval(() => {
-    if (i < text.length) el.innerHTML = text.slice(0, ++i) + '<span class="cur"></span>';
-    else {
-      el.innerHTML = text;
+    if (i < raw.length) {
+      const partial = raw.slice(0, ++i).replace(/\n/g, '<br>');
+      el.innerHTML = partial + '<span class="cur"></span>';
+    } else {
+      el.innerHTML = htmlFull;
       clearInterval(t);
     }
   }, sp);
@@ -2251,7 +2278,15 @@ async function submitSg() {
       body: JSON.stringify({ type, body, name: P.name, home: P.home, replyEmail }),
     });
     const data = await res.json();
-    if (!data.ok) throw new Error(data.error || '전송 실패');
+    if (!data.ok) {
+      const hint =
+        data.code === 'NO_MAIL_CONFIG' || data.code === 'NO_SMTP' || data.code === 'SMTP_AUTH'
+          ? ' (서버 메일 설정 필요)'
+          : data.saved
+            ? ' (서버에만 저장됨)'
+            : '';
+      throw new Error((data.error || '전송 실패') + hint);
+    }
     document.getElementById('sgForm').style.display = 'none';
     document.getElementById('sgSent').style.display = 'block';
     showToast('건의가 메일로 전달됐어요');

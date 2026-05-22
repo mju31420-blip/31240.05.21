@@ -19,13 +19,13 @@ export function computeMealIntent(gapMin, refDate = new Date()) {
   const lunchHourGap = gapMin >= 60 && lunchWindow;
   const willEat = longGap || lunchHourGap;
 
-  let reason = '공강이 짧아 학식 이동은 부담스러울 수 있어요.';
+  let reason = '공강이 짧아 근처에서 간단히 해결하는 편이 좋아요.';
   let rule = 'skip';
   if (longGap) {
-    reason = '공강 2시간 이상 — 이 시간대에 식사 이동이 예상됩니다.';
+    reason = '공강이 2시간 이상 — 지금은 학식 가기 좋은 시간이에요.';
     rule = 'long_gap';
   } else if (lunchHourGap) {
-    reason = `${LUNCH_START}~${LUNCH_END} 사이 1시간+ 공강 — 점심 식사 이동이 예상됩니다.`;
+    reason = `점심 시간대(${LUNCH_START}~${LUNCH_END})에 공강 1시간 이상 — 점심 식사 추천해요.`;
     rule = 'lunch_window';
   }
 
