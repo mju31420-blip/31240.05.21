@@ -45,9 +45,12 @@ body{display:flex;justify-content:center;overscroll-behavior-y:none;-webkit-over
   box-shadow:0 0 60px rgba(7,23,48,.18);
 }
 
-/* ── ONBOARDING ── */
-.ob-ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:300;display:flex;align-items:flex-end;justify-content:center}
-.ob-sh{background:#fff;border-radius:24px 24px 0 0;width:100%;max-width:430px;max-height:90vh;max-height:90svh;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:16px}
+/* ── ONBOARDING / 간단 설정 (첫 실행·설정 공용) ── */
+.ob-ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:300;display:none;align-items:flex-end;justify-content:center}
+.ob-ov.on{display:flex}
+.ob-sh{background:#fff;border-radius:24px 24px 0 0;width:100%;max-width:430px;max-height:90vh;max-height:90svh;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:max(16px,env(safe-area-inset-bottom));transform:translateY(100%);transition:transform .34s cubic-bezier(.32,.72,.24,1)}
+.ob-ov.on .ob-sh{transform:translateY(0)}
+html.ob-lock,html.ob-lock body{overflow:hidden}
 .ob-hd{background:linear-gradient(150deg,var(--navy2),var(--navy),var(--navy3));padding:30px 22px 22px;text-align:center}
 .ob-ico{width:46px;height:46px;background:linear-gradient(135deg,var(--goldl),#b45309);border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:22px;margin:0 auto 10px;box-shadow:0 4px 14px rgba(217,119,6,.4)}
 .ob-title{font-size:21px;font-weight:900;color:#fff;letter-spacing:-.3px}
@@ -63,20 +66,6 @@ body{display:flex;justify-content:center;overscroll-behavior-y:none;-webkit-over
 .ob-inp:focus{border-color:var(--blue);background:#fff}
 .btn-ob{width:100%;background:linear-gradient(135deg,var(--navy),var(--blue));color:#fff;border:none;padding:15px;border-radius:12px;font-size:15px;font-weight:700;font-family:'Noto Sans KR',sans-serif;cursor:pointer;margin-top:6px;min-height:52px;transition:opacity .15s;touch-action:manipulation}
 .btn-ob:active{opacity:.85}
-
-/* ── 간단 설정 배너 (첫 실행) ── */
-.setup-banner{display:none;margin:0 12px 10px;padding:14px 14px 12px;border-radius:14px;background:linear-gradient(145deg,#f0f5ff,#fff);border:1.5px solid #c7d7ff;box-shadow:0 4px 14px rgba(12,36,97,.08);flex-shrink:0}
-.setup-banner.on{display:block}
-.setup-banner-hd{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #e2e8f2}
-.setup-banner-ico{width:40px;height:40px;background:linear-gradient(135deg,var(--goldl),#b45309);border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;box-shadow:0 3px 10px rgba(217,119,6,.35)}
-.setup-banner-txt{flex:1;min-width:0}
-.setup-banner-title{font-size:14px;font-weight:800;color:var(--navy);letter-spacing:-.2px}
-.setup-banner-sub{font-size:10.5px;color:var(--muted);margin-top:2px;line-height:1.45}
-.setup-banner .ob-sec{margin-bottom:11px}
-.setup-banner .ob-sec:last-of-type{margin-bottom:10px}
-.setup-banner .ob-stitle{font-size:11.5px;margin-bottom:6px}
-.setup-banner .chip{padding:8px 11px;font-size:12px;min-height:40px}
-.setup-banner .btn-ob{margin-top:0;padding:12px;min-height:46px;font-size:14px}
 
 /* ── HEADER ── */
 .hdr{background:linear-gradient(150deg,var(--navy2) 0%,var(--navy) 55%,var(--navy3) 100%);
@@ -420,9 +409,9 @@ body{display:flex;justify-content:center;overscroll-behavior-y:none;-webkit-over
 </head>
 <body>
 
-<!-- ONBOARDING -->
-<div class="ob-ov" id="obOv" style="display:none">
-  <div class="ob-sh">
+<!-- 간단 설정: 첫 실행 시 자동 표시 · ⚙️설정과 동일 -->
+<div class="ob-ov" id="obOv" aria-hidden="true">
+  <div class="ob-sh" id="obSheet">
     <div class="ob-hd">
       <div class="ob-ico">🧠</div>
       <div class="ob-title">간단 설정</div>
@@ -431,7 +420,7 @@ body{display:flex;justify-content:center;overscroll-behavior-y:none;-webkit-over
     <div class="ob-bd">
       <div class="ob-sec">
         <div class="ob-stitle">🍽️ 오늘 땡기는 음식</div>
-        <div class="chips" id="tasteGSet">
+        <div class="chips" id="tasteG">
           <div class="chip chip-taste" data-v="한식" onclick="togChip(this,'t')">🍚 한식</div>
           <div class="chip chip-taste" data-v="중식" onclick="togChip(this,'t')">🥟 중식</div>
           <div class="chip chip-taste" data-v="일식" onclick="togChip(this,'t')">🍣 일식</div>
@@ -440,16 +429,31 @@ body{display:flex;justify-content:center;overscroll-behavior-y:none;-webkit-over
       </div>
       <div class="ob-sec">
         <div class="ob-stitle">🏠 거주</div>
-        <div class="chips" id="homeGSet">
+        <div class="chips" id="homeG">
           <div class="chip chip-home" data-v="기흥역행" onclick="togChip(this,'h')">🚌 기흥역행</div>
           <div class="chip chip-home" data-v="시내행" onclick="togChip(this,'h')">🚍 시내행</div>
           <div class="chip chip-home" data-v="기숙사생" onclick="togChip(this,'h')">🏠 기숙사생</div>
         </div>
       </div>
-      <button class="btn-ob" onclick="doneOb()">저장하기 →</button>
+      <button type="button" class="btn-ob" id="obSubmitBtn" onclick="doneOb()">시작하기 →</button>
     </div>
   </div>
 </div>
+<script>
+  (function () {
+    try {
+      if (localStorage.getItem('mb_setup_done') !== '1') {
+        var ov = document.getElementById('obOv');
+        if (ov) {
+          ov.classList.add('on');
+          ov.style.display = 'flex';
+          ov.setAttribute('aria-hidden', 'false');
+          document.documentElement.classList.add('ob-lock');
+        }
+      }
+    } catch (e) {}
+  })();
+</script>
 
 <!-- MAIN APP -->
 <div class="shell">
@@ -489,47 +493,6 @@ body{display:flex;justify-content:center;overscroll-behavior-y:none;-webkit-over
       <button class="day-btn"    id="btnTmrw"  onclick="setDay('tomorrow')">내일 (예측)</button>
     </div>
   </div>
-
-  <div class="setup-banner" id="setupBanner" role="region" aria-label="간단 설정">
-    <div class="setup-banner-hd">
-      <div class="setup-banner-ico" aria-hidden="true">🧠</div>
-      <div class="setup-banner-txt">
-        <div class="setup-banner-title">간단 설정</div>
-        <div class="setup-banner-sub">취향·거주만 고르면 식당 순위가 바뀝니다</div>
-      </div>
-    </div>
-    <div class="ob-sec">
-      <div class="ob-stitle">🍽️ 오늘 땡기는 음식</div>
-      <div class="chips" id="tasteG">
-        <div class="chip chip-taste" data-v="한식" onclick="togChip(this,'t')">🍚 한식</div>
-        <div class="chip chip-taste" data-v="중식" onclick="togChip(this,'t')">🥟 중식</div>
-        <div class="chip chip-taste" data-v="일식" onclick="togChip(this,'t')">🍣 일식</div>
-        <div class="chip chip-taste" data-v="양식" onclick="togChip(this,'t')">🍝 양식</div>
-      </div>
-    </div>
-    <div class="ob-sec">
-      <div class="ob-stitle">🏠 거주</div>
-      <div class="chips" id="homeG">
-        <div class="chip chip-home" data-v="기흥역행" onclick="togChip(this,'h')">🚌 기흥역행</div>
-        <div class="chip chip-home" data-v="시내행" onclick="togChip(this,'h')">🚍 시내행</div>
-        <div class="chip chip-home" data-v="기숙사생" onclick="togChip(this,'h')">🏠 기숙사생</div>
-      </div>
-    </div>
-    <button type="button" class="btn-ob" onclick="doneOb()">시작하기 →</button>
-  </div>
-  <script>
-    (function () {
-      try {
-        if (localStorage.getItem('mb_setup_done') !== '1') {
-          var b = document.getElementById('setupBanner');
-          if (b) {
-            b.classList.add('on');
-            b.style.display = 'block';
-          }
-        }
-      } catch (e) {}
-    })();
-  </script>
 
   <div class="data-phase-banner" role="note">
     <span class="data-phase-ico" aria-hidden="true">📊</span>
@@ -701,14 +664,14 @@ body{display:flex;justify-content:center;overscroll-behavior-y:none;-webkit-over
 </div>
 <div class="toast" id="toast"></div>
 
-<script type="module" src="/analytics-sync.js?v=20260522-fix2"></script>
-<script src="/utils.js?v=20260522-fix2"></script>
-<script src="/kst.js?v=20260522-fix2" defer></script>
-<script src="/schoolCalendar.js?v=20260522-fix2" defer></script>
-<script src="/campusDistance.js?v=20260522-fix2" defer></script>
-<script src="/timetable.js?v=20260522-fix2" defer></script>
-<script src="/mealEngine.js?v=20260522-fix2" defer></script>
-<script src="/app.js?v=20260522-fix2" defer></script>
+<script type="module" src="/analytics-sync.js?v=20260522-fix3"></script>
+<script src="/utils.js?v=20260522-fix3"></script>
+<script src="/kst.js?v=20260522-fix3" defer></script>
+<script src="/schoolCalendar.js?v=20260522-fix3" defer></script>
+<script src="/campusDistance.js?v=20260522-fix3" defer></script>
+<script src="/timetable.js?v=20260522-fix3" defer></script>
+<script src="/mealEngine.js?v=20260522-fix3" defer></script>
+<script src="/app.js?v=20260522-fix3" defer></script>
 <script src="/pwa-register.js?v=20260522-fix2" defer></script>
 </body>
 </html>

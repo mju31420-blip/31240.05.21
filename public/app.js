@@ -1,7 +1,7 @@
 /* ════════════════════════════ PROFILE ════ */
 const SETUP_DONE_KEY = 'mb_setup_done';
 /** 배포·캐시 확인용 — 콘솔에서 window.MB_APP_BUILD 로 확인 */
-const MB_APP_BUILD = '2026-05-22-fix2';
+const MB_APP_BUILD = '2026-05-22-fix3';
 let P = { name: '명지인', tastes: [], home: '', diet: false };
 let tArr = [],
   hVal = '';
@@ -64,24 +64,39 @@ function markSetupComplete() {
   }
 }
 
-function needsSetupBanner() {
-  return !isSetupComplete();
+function openSetupModal(firstLaunch = false) {
+  const ov = document.getElementById('obOv');
+  if (!ov) return;
+  tArr = [...(P.tastes || [])];
+  hVal = P.home || '';
+  syncSetupChips();
+  const btn = document.getElementById('obSubmitBtn');
+  if (btn) btn.textContent = firstLaunch ? '시작하기 →' : '저장하기 →';
+  ov.classList.add('on');
+  ov.style.display = 'flex';
+  ov.setAttribute('aria-hidden', 'false');
+  document.documentElement.classList.add('ob-lock');
 }
 
-function updateSetupBannerVisibility() {
-  const banner = document.getElementById('setupBanner');
-  if (!banner) return;
-  if (needsSetupBanner()) {
-    banner.classList.add('on');
-    banner.style.display = 'block';
-    syncSetupChips();
-  } else {
-    banner.classList.remove('on');
-    banner.style.display = 'none';
-  }
+function closeSetupModal() {
+  const ov = document.getElementById('obOv');
+  if (!ov) return;
+  ov.classList.remove('on');
+  ov.style.display = 'none';
+  ov.setAttribute('aria-hidden', 'true');
+  document.documentElement.classList.remove('ob-lock');
+}
+
+function updateSetupOnLaunch() {
+  if (!isSetupComplete()) openSetupModal(true);
+  else closeSetupModal();
 }
 
 function doneOb() {
+  if (!hVal) {
+    showToast('거주 유형을 선택해 주세요');
+    return;
+  }
   P.name = '주인님';
   P.tastes = [...tArr];
   P.home = normalizeHomeValue(hVal);
@@ -89,8 +104,7 @@ function doneOb() {
   markSetupComplete();
   document.getElementById('hpName').textContent = P.name;
   document.getElementById('hpHome').textContent = P.home || '거주 미설정';
-  document.getElementById('obOv').style.display = 'none';
-  updateSetupBannerVisibility();
+  closeSetupModal();
   saveProfile();
   updateLearnedDisplay();
   renderHeaderTasteChips();
@@ -125,9 +139,7 @@ function loadProfile() {
   } catch (e) {
     console.warn('profile load', e);
   }
-  const ob = document.getElementById('obOv');
-  if (ob) ob.style.display = 'none';
-  updateSetupBannerVisibility();
+  updateSetupOnLaunch();
   updateLearnedDisplay();
   renderHeaderTasteChips();
   updateSavedTimetableUi();
@@ -897,10 +909,7 @@ function tagsFromMenus(menus) {
 }
 
 function openSettings() {
-  document.getElementById('obOv').style.display = 'flex';
-  tArr = [...(P.tastes || [])];
-  hVal = P.home || '';
-  syncSetupChips();
+  openSetupModal(false);
 }
 
 const HEADER_TASTES = CUISINE_TYPES;
@@ -2385,7 +2394,7 @@ function showToast(msg) {
 
 async function bootApp() {
   loadProfile();
-  updateSetupBannerVisibility();
+  updateSetupOnLaunch();
   if (typeof TimetableUtil !== 'undefined' && TimetableUtil.populateBuildingSelects) {
     TimetableUtil.populateBuildingSelects();
   }

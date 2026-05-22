@@ -13,7 +13,7 @@
 
   window.addEventListener('load', () => {
     navigator.serviceWorker
-      .register('/sw.js?v=20260522-fix2', { scope: '/' })
+      .register('/sw.js?v=20260522-fix3', { scope: '/' })
       .then((reg) => {
         reg.addEventListener('updatefound', () => {
           const next = reg.installing;
