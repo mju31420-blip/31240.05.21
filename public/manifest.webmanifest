@@ -1,0 +1,48 @@
+{
+  "name": "명비서 — 명지대 자연캠퍼스",
+  "short_name": "명비서",
+  "description": "명지대 자연캠퍼스 초개인화 AI — 시간표·식당·셔틀",
+  "lang": "ko-KR",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "background_color": "#071730",
+  "theme_color": "#0c2461",
+  "categories": ["education", "food", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "식당 추천",
+      "short_name": "식당",
+      "url": "/?tab=food",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "셔틀 시간",
+      "short_name": "셔틀",
+      "url": "/?tab=shuttle",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

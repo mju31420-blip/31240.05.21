@@ -2,7 +2,17 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0c2461">
+<meta name="description" content="명지대 자연캠퍼스 AI 비서 — 시간표·식당·셔틀 실시간 안내">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="명비서">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <title>명비서 — 명지대 자연캠퍼스</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
@@ -21,7 +31,12 @@
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{width:100%;min-height:100%;font-family:'Noto Sans KR',sans-serif;color:var(--text);background:#eef2f9}
-body{display:flex;justify-content:center}
+html{overscroll-behavior:none}
+body{display:flex;justify-content:center;overscroll-behavior-y:none;-webkit-overflow-scrolling:touch}
+@media (display-mode:standalone){
+  body{background:#fff}
+  .shell{box-shadow:none;max-width:100%}
+}
 
 /* ── SHELL ── */
 .shell{
@@ -639,5 +654,6 @@ body{display:flex;justify-content:center}
 <script src="/timetable.js" defer></script>
 <script src="/mealEngine.js" defer></script>
 <script src="/app.js" defer></script>
+<script src="/pwa-register.js" defer></script>
 </body>
 </html>
