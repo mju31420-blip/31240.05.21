@@ -20,15 +20,16 @@ function togChip(el, g) {
 }
 
 function doneOb() {
-  P.name = document.getElementById('obName').value.trim() || '명지인';
+  P.name = '주인님';
   P.tastes = [...tArr];
   P.home = hVal;
-  P.diet = document.getElementById('obDiet')?.classList.contains('on') || false;
-  document.getElementById('hpName').textContent = P.name + '님';
+  P.diet = false;
+  document.getElementById('hpName').textContent = P.name;
   document.getElementById('hpHome').textContent = P.home || '거주 미설정';
   document.getElementById('obOv').style.display = 'none';
   saveProfile();
   updateLearnedDisplay();
+  renderHeaderTasteChips();
   setTimeout(() => moveInk(document.querySelector('.tb.on')), 60);
 }
 
@@ -46,34 +47,72 @@ function loadProfile() {
     if (!raw) return;
     const saved = JSON.parse(raw);
     P = { ...P, ...saved };
-    document.getElementById('hpName').textContent = P.name + '님';
+    P.tastes = (P.tastes || []).filter((t) => CUISINE_TYPES.includes(t));
+    tArr = [...P.tastes];
+    hVal = P.home || '';
+    document.getElementById('hpName').textContent = P.name === '명지인' ? '주인님' : P.name;
     document.getElementById('hpHome').textContent = P.home || '거주 미설정';
     if (P.name && P.name !== '명지인') document.getElementById('obOv').style.display = 'none';
   } catch (e) {
     console.warn('profile load', e);
   }
   updateLearnedDisplay();
+  renderHeaderTasteChips();
+  updateSavedTimetableUi();
 }
 
 /* ════════════════════════════ 실제 식단 (mju.ac.kr) ════ */
 let MENUS = {};
 let menuMeta = { updatedAt: null, ready: false, loading: false };
 
+const MENU_RESTAURANT_KEYS = ['기숙사', '명진당', '교직원', '학생회관'];
+
+/** API·JSON은 요일 키가 문자열("1")인 경우가 많음 → 숫자 0~6으로 통일 */
+function normalizeMenusPayload(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const out = {};
+
+  function normalizeDays(restaurantSrc) {
+    const days = {};
+    const base = restaurantSrc?.days && typeof restaurantSrc.days === 'object' ? restaurantSrc.days : restaurantSrc;
+    if (!base || typeof base !== 'object') return days;
+    for (const [dk, slots] of Object.entries(base)) {
+      const dow = parseInt(dk, 10);
+      if (Number.isNaN(dow) || dow < 0 || dow > 6) continue;
+      days[dow] = {
+        l: Array.isArray(slots?.l) ? slots.l : [],
+        d: Array.isArray(slots?.d) ? slots.d : [],
+        b: Array.isArray(slots?.b) ? slots.b : [],
+      };
+    }
+    return days;
+  }
+
+  for (const key of MENU_RESTAURANT_KEYS) {
+    if (src[key] != null) out[key] = normalizeDays(src[key]);
+  }
+  for (const [key, val] of Object.entries(src)) {
+    if (!out[key]) out[key] = normalizeDays(val);
+  }
+  return out;
+}
+
+function getMenuDayData(restaurantDays, day) {
+  if (!restaurantDays || day == null) return null;
+  const n = Number(day);
+  return restaurantDays[n] ?? restaurantDays[String(n)] ?? null;
+}
+
 /* ════════════════════════════ CAMPUS SCHEDULE / CROWD ════ */
 let CAMPUS_SCHEDULE = null;
 
+/** 개인 시간표로 혼잡도 전환하기 전 최소 집계 수 (추후 Firestore 연동) */
+const TIMETABLE_CROWD_MIN_POOL = 1000;
+
 /**
- * [혼잡도 예측 - 1단계: 강의시간표 기반]
- * 현재는 명지대 자연캠퍼스 2026년 1학기 강의시간표 데이터를 기반으로
- * 수업 종료 시각과 건물별 인원을 계산해 혼잡도를 예측함.
- *
- * 이 데이터는 임시 대안이며, 아래 단계로 발전 예정:
- * - 2단계: 사용자 방문 피드백(crowd_feedback)이 쌓이면 피드백 비중을 높임
- * - 3단계: 실사용자 데이터가 충분히 쌓이면 강의시간표 데이터 완전 대체
- *
- * 즉, 명비서 사용자가 늘어날수록 campus_schedule.json은 점점 덜 중요해지고
- * 실제 방문 피드백 데이터가 핵심이 됨. 추후 campus_schedule.json 의존도를
- * 낮추는 방향으로 리팩토링 권장.
+ * [혼잡도 예측 — campus_schedule.json 우선]
+ * 강의 스케줄(학기 시간표 집계) + 방문 피드백으로 식당 혼잡도를 추정합니다.
+ * 개인 OCR 시간표는 공강·요일·동선 분석에만 쓰고, 혼잡도는 pool ≥ 1000 이후 전환.
  */
 async function loadCampusSchedule() {
   if (CAMPUS_SCHEDULE) return;
@@ -97,7 +136,7 @@ function getDynamicCrowd(restaurantKey) {
   const dow = now.getDay();
   const timeFloat = kstHour + kstMin / 60;
 
-  if (dow === 0 || dow === 6) return 10;
+  if (isNoSchoolDay(now)) return 10;
   if (timeFloat < 11.0 || timeFloat > 19.0) return 5;
   if (restaurantKey === '명진당' && timeFloat > 14.5) return 5;
   if (restaurantKey === '학생회관' && timeFloat > 14.5) return 5;
@@ -105,19 +144,23 @@ function getDynamicCrowd(restaurantKey) {
 
   const CROWD_BASE = { 기숙사: 40, 명진당: 45, 교직원: 25, 학생회관: 35 };
 
+  const NEARBY = {
+    기숙사: ['자연', '명진당', '1공'],
+    명진당: ['명진당', '자연', '5공', '3공'],
+    교직원: ['명진당', '자연', '5공'],
+    학생회관: ['학생', '자연', '5공', '3공'],
+  };
+
   let crowdBonus = 0;
-  if (CAMPUS_SCHEDULE && CAMPUS_SCHEDULE[dow]) {
+  if (canUseTimetableForCrowd()) {
+    const ttBonus = getTimetableCrowdBonus(restaurantKey, now, timeFloat, NEARBY);
+    if (ttBonus != null) crowdBonus = ttBonus;
+  } else if (CAMPUS_SCHEDULE && CAMPUS_SCHEDULE[dow]) {
     Object.entries(CAMPUS_SCHEDULE[dow]).forEach(([timeKey, buildings]) => {
       const [h, m] = timeKey.split(':').map(Number);
       const endFloat = h + m / 60;
       const diff = timeFloat - endFloat;
       if (diff >= -0.17 && diff <= 0.33) {
-        const NEARBY = {
-          기숙사: ['자연', '명진당', '1공'],
-          명진당: ['명진당', '자연', '5공', '3공'],
-          교직원: ['명진당', '자연', '5공'],
-          학생회관: ['학생', '자연', '5공', '3공'],
-        };
         (NEARBY[restaurantKey] || []).forEach((b) => {
           crowdBonus += (buildings[b] || 0) * 0.02;
         });
@@ -141,12 +184,41 @@ function getDynamicCrowd(restaurantKey) {
   return Math.min(95, Math.max(5, Math.round((CROWD_BASE[restaurantKey] || 40) + crowdBonus)));
 }
 
+function getTimetablePoolCount() {
+  return parseInt(localStorage.getItem('mb_timetable_pool_count') || '0', 10);
+}
+
+function canUseTimetableForCrowd() {
+  return getTimetablePoolCount() >= TIMETABLE_CROWD_MIN_POOL;
+}
+
+/** pool ≥ 1000일 때만 개인 시간표 종료 시각으로 혼잡 가산 */
+function getTimetableCrowdBonus(restaurantKey, refDate, timeFloat, nearbyMap) {
+  if (typeof TimetableUtil === 'undefined') return null;
+  const classes = TimetableUtil.loadUserTimetable();
+  if (!classes.length) return null;
+  const dow = refDate.getDay();
+  const today = classes.filter((c) => c.dow === dow);
+  if (!today.length) return 0;
+
+  let bonus = 0;
+  for (const c of today) {
+    const m = String(c.end || '').match(/(\d{1,2}):(\d{2})/);
+    if (!m) continue;
+    const endFloat = parseInt(m[1], 10) + parseInt(m[2], 10) / 60;
+    const diff = timeFloat - endFloat;
+    if (diff >= -0.17 && diff <= 0.33) {
+      const near = nearbyMap[restaurantKey] || [];
+      if (near.includes(c.buildingKey)) bonus += 12;
+    }
+  }
+  return bonus;
+}
+
 async function loadMenus(refresh = false) {
   if (menuMeta.loading) return;
   if (!refresh && menuMeta.ready) return;
   menuMeta.loading = true;
-  const el = document.getElementById('menuSync');
-  if (el) el.textContent = '식단 불러오는 중…';
   try {
     const res = await fetch('/api/menus' + (refresh ? '?refresh=1' : ''));
     const ct = res.headers.get('content-type') || '';
@@ -162,23 +234,19 @@ async function loadMenus(refresh = false) {
     }
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || '식단 API 오류');
-    MENUS = data.MENUS || {};
+    MENUS = normalizeMenusPayload(data.MENUS || {});
     menuMeta.updatedAt = data.updatedAt;
-    menuMeta.ready = Object.keys(MENUS).length > 0;
-    if (el) {
-      const t = menuMeta.updatedAt
-        ? new Date(menuMeta.updatedAt).toLocaleString('ko-KR', {
-            month: 'numeric',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          })
-        : '';
-      el.textContent = menuMeta.ready ? `식단 연동 · ${t}` : '식단 일부만 로드됨';
-    }
+    menuMeta.ready = MENU_RESTAURANT_KEYS.some((k) => Object.keys(MENUS[k] || {}).length > 0);
+    console.log(
+      '[loadMenus] restaurants',
+      MENU_RESTAURANT_KEYS.map((k) => ({
+        key: k,
+        dayKeys: Object.keys(MENUS[k] || {}),
+        todayLunch: getMenuDayData(MENUS[k], menuDayIndex(0))?.l?.length ?? 0,
+      })),
+    );
     if (lastData) drawFood();
   } catch (e) {
-    if (el) el.textContent = '식단 연동 실패';
     showToast('공식 식단을 불러오지 못했어요');
     console.error(e);
   } finally {
@@ -236,8 +304,7 @@ async function fetchWeather() {
 }
 fetchWeather();
 setInterval(fetchWeather, 30 * 60 * 1000);
-loadMenus();
-loadCampusSchedule();
+if (typeof SchoolCalendar !== 'undefined') SchoolCalendar.load();
 
 /* ════════════════════════════ TABS ════ */
 function goTab(id, btn) {
@@ -272,6 +339,7 @@ function setRank(m) {
   document.getElementById('rDist')?.classList.toggle('on', m === 'distance');
   document.getElementById('rFood')?.classList.toggle('on', m === 'food');
   if (lastData) drawFood();
+  else showToast('시간표에서 먼저 분석해 주세요');
 }
 
 function setDay(m) {
@@ -279,12 +347,16 @@ function setDay(m) {
   document.getElementById('btnToday').classList.toggle('on', m === 'today');
   document.getElementById('btnTmrw').classList.toggle('on', m === 'tomorrow');
   if (lastData) drawFood();
+  drawShuttle();
 }
 function setMeal(m) {
   mealMode = m;
   document.getElementById('mLunch').classList.toggle('on', m === 'lunch');
   document.getElementById('mDinner').classList.toggle('on', m === 'dinner');
-  if (lastData) drawFood();
+  if (lastData) {
+    lastData.rankMode = rankMode;
+    drawFood();
+  }
 }
 
 /* ════════════════════════════ INPUT MODE ════ */
@@ -293,10 +365,211 @@ let hasImg = false,
   imgMediaType = 'image/jpeg';
 
 function setMd(m) {
-  document.getElementById('mMan').classList.toggle('on', m === 'manual');
-  document.getElementById('mImg').classList.toggle('on', m === 'img');
+  document.getElementById('mMan')?.classList.toggle('on', m === 'manual');
+  document.getElementById('mSaved')?.classList.toggle('on', m === 'saved');
+  document.getElementById('mImg')?.classList.toggle('on', m === 'img');
   document.getElementById('manMode').style.display = m === 'manual' ? 'block' : 'none';
+  document.getElementById('savedMode').style.display = m === 'saved' ? 'block' : 'none';
   document.getElementById('imgMode').style.display = m === 'img' ? 'block' : 'none';
+}
+
+function updateSavedTimetableUi() {
+  const hint = document.getElementById('ttHint');
+  const summary = document.getElementById('savedTtSummary');
+  if (typeof TimetableUtil === 'undefined') return;
+  const classes = TimetableUtil.loadUserTimetable();
+  const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
+  const dow = ref.getDay();
+  const offDay = isNoSchoolDay(ref);
+  const today = offDay ? [] : classes.filter((c) => c.dow === dow);
+  if (hint) {
+    hint.textContent = today.length
+      ? `📅 저장된 시간표 ${classes.length}개 · 오늘 ${today.length}개 수업 — 「저장 시간표」 탭에서 즉시 분석 가능`
+      : offDay
+        ? `${typeof SchoolCalendar !== 'undefined' ? SchoolCalendar.dayLabel(ref) : '휴일'} — 수업 없음. 주간 OCR로 평일 시간표를 저장해 두면 개학일에 바로 쓸 수 있어요.`
+        : '시간표 이미지 OCR 후 수업 목록이 자동 저장됩니다. 샘플 시간표도 사용할 수 있어요.';
+  }
+  if (summary) {
+    if (today.length) {
+      const snap = TimetableUtil.analyzeNow(classes, ref);
+      const gapLine = TimetableUtil.formatGapDetail
+        ? TimetableUtil.formatGapDetail(snap, ref)
+        : `공강 ${snap.gapMin}분`;
+      const weekLine = TimetableUtil.formatWeeklyDowLine ? TimetableUtil.formatWeeklyDowLine(classes) : '';
+      summary.innerHTML = `${weekLine ? weekLine + '<br>' : ''}<b>${TimetableUtil.DOW_NAMES[dow]}요일</b> ${today.length}개 · ${gapLine}<br>현재: ${snap.curTxt}<br>다음: ${snap.nextTxt}`;
+    } else if (classes.length && TimetableUtil.formatWeeklyDowLine) {
+      summary.innerHTML = `${TimetableUtil.formatWeeklyDowLine(classes)}<br>오늘(${TimetableUtil.DOW_NAMES[dow]}) 수업 없음 — OCR 시 요일(dow) 확인`;
+    } else {
+      summary.textContent = offDay
+        ? `${typeof SchoolCalendar !== 'undefined' ? SchoolCalendar.dayLabel(ref) : '휴일'} — 오늘은 수업·식당 운영이 주말과 같습니다.`
+        : '오늘 수업이 저장된 시간표에 없습니다. AI OCR 분석 후 수업이 자동 저장됩니다.';
+    }
+  }
+}
+
+function persistOcrClasses(apiClasses) {
+  if (!apiClasses?.length || typeof TimetableUtil === 'undefined') return;
+  const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
+  const normalized = TimetableUtil.normalizeClassesFromAi(apiClasses, ref.getDay());
+  if (!normalized.length) return;
+  const merged = TimetableUtil.mergeTimetableClasses(TimetableUtil.loadUserTimetable(), normalized);
+  TimetableUtil.saveUserTimetable(merged);
+  updateSavedTimetableUi();
+}
+
+function refineScheduleAnalysis(api = {}) {
+  const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
+  const warnings = [...(api.warnings || [])];
+  let classes = [];
+
+  if (typeof TimetableUtil !== 'undefined') {
+    const fromApi = TimetableUtil.normalizeClassesFromAi(api.classes || api.수업 || [], ref.getDay());
+    if (fromApi.length) {
+      classes = TimetableUtil.mergeTimetableClasses(TimetableUtil.loadUserTimetable(), fromApi);
+      TimetableUtil.saveUserTimetable(classes);
+    } else {
+      classes = TimetableUtil.loadUserTimetable();
+    }
+
+    const todayClasses = classes.filter((c) => c.dow === ref.getDay());
+    if (todayClasses.length >= 1 || classes.length >= 2) {
+      const computed = TimetableUtil.analyzeFromClasses(classes, ref);
+      const aiGap = parseInt(api.gapMin, 10);
+      if (!Number.isNaN(aiGap) && Math.abs(aiGap - computed.gapMin) > 15) {
+        warnings.push(`AI 공강 ${aiGap}분 → ${TimetableUtil.DOW_NAMES[ref.getDay()]}요일 수업 기준 ${computed.gapMin}분`);
+      }
+      const gapDetail = TimetableUtil.formatGapDetail
+        ? TimetableUtil.formatGapDetail(computed, ref)
+        : `공강 ${computed.gapMin}분`;
+      return {
+        curKey: computed.curKey,
+        curTxt: computed.curTxt,
+        nextKey: computed.nextKey,
+        nextTxt: computed.nextTxt,
+        gapMin: computed.gapMin,
+        mealIntent: api.mealIntent || computed.mealIntent,
+        scheduleMeta: {
+          timeline: computed.timeline,
+          gapSource: api.gapSource === 'saved_timetable' ? 'saved_timetable' : 'timetable_classes',
+          gapDetail,
+          dow: ref.getDay(),
+          dowLabel: TimetableUtil.DOW_NAMES[ref.getDay()],
+          todayCount: computed.today?.length ?? todayClasses.length,
+          weeklyLine: TimetableUtil.formatWeeklyDowLine
+            ? TimetableUtil.formatWeeklyDowLine(classes)
+            : '',
+          warnings,
+          classCount: classes.length,
+        },
+      };
+    }
+  }
+
+  return {
+    curKey: api.curKey || '3공',
+    curTxt: api.curTxt || '캠퍼스',
+    nextKey: api.nextKey || 'none',
+    nextTxt: api.nextTxt || '없음 (하교)',
+    gapMin: api.gapMin || 75,
+    mealIntent: api.mealIntent || MealEngine.computeMealIntent(api.gapMin || 75, ref),
+    scheduleMeta: {
+      timeline: [],
+      gapSource: api.gapSource || 'ai',
+      warnings,
+      classCount: classes.length,
+    },
+  };
+}
+
+function buildScheduleComment(cur, nextKey, gapMin, mealIntent, scheduleMeta = {}) {
+  const parts = [];
+  if (scheduleMeta.gapSource?.includes('classes') || scheduleMeta.gapSource === 'timetable_classes') {
+    const dow = scheduleMeta.dowLabel || '';
+    const n = scheduleMeta.todayCount != null ? `${scheduleMeta.todayCount}개 수업 · ` : '';
+    parts.push(`📅 ${dow}요일 ${n}시간표 기준 공강 ${gapMin}분`);
+    if (scheduleMeta.gapDetail) parts.push(scheduleMeta.gapDetail);
+    if (scheduleMeta.weeklyLine) parts.push(`요일별: ${scheduleMeta.weeklyLine}`);
+  } else if (scheduleMeta.gapSource === 'saved_timetable') {
+    parts.push(`📅 저장 시간표 · ${scheduleMeta.dowLabel || ''}요일 공강 ${gapMin}분`);
+    if (scheduleMeta.gapDetail) parts.push(scheduleMeta.gapDetail);
+  } else {
+    parts.push('🤖 AI가 시간표 이미지에서 건물·공강을 읽었어요. (혼잡도는 학기 스케줄 데이터 사용)');
+  }
+  parts.push(mealIntent?.reason || '');
+  if (gapMin < 45) parts.push('공강이 짧아 가까운 식당·빠른 동선을 우선 추천합니다.');
+  else if (gapMin >= 120) parts.push('여유 공강 — 취향·메뉴 매칭을 넉넉히 볼 수 있어요.');
+  if (nextKey && nextKey !== 'none' && typeof CampusDistance !== 'undefined') {
+    const walk = CampusDistance.walkB2B(cur, nextKey);
+    parts.push(`다음 수업까지 도보 복귀 약 ${walk}분 — 식사+이동 시간을 함께 반영했어요.`);
+  }
+  if (scheduleMeta.warnings?.length) {
+    parts.push(`ℹ️ ${scheduleMeta.warnings.join(' ')}`);
+  }
+  return parts.filter(Boolean).join(' ');
+}
+
+function fillManualFromAnalysis(data) {
+  const curSel = document.getElementById('mCur');
+  const nextSel = document.getElementById('mNext');
+  const gapSel = document.getElementById('mGap');
+  if (curSel && data.curKey) curSel.value = data.curKey;
+  if (nextSel) nextSel.value = data.nextKey === 'none' || !data.nextKey ? 'none' : data.nextKey;
+  if (gapSel && typeof TimetableUtil !== 'undefined') {
+    gapSel.value = TimetableUtil.suggestGapOptionValue(data.gapMin);
+  }
+}
+
+function fillManualFromTimetable() {
+  if (typeof TimetableUtil === 'undefined') return;
+  const snap = TimetableUtil.analyzeNow();
+  fillManualFromAnalysis(snap);
+  setMd('manual');
+  showToast('수동 입력에 오늘 시간표를 채웠어요');
+}
+
+async function applyScheduleAnalysis(rawApi, sourceLabel = '분석') {
+  await ensureMenus();
+  const data = refineScheduleAnalysis(rawApi);
+  const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
+  const mealIntent = data.mealIntent || MealEngine.computeMealIntent(data.gapMin, ref);
+  const period = mealIntent.period || (ref.getHours() >= 17 ? 'dinner' : 'lunch');
+  const comment = buildScheduleComment(data.curKey, data.nextKey, data.gapMin, mealIntent, data.scheduleMeta);
+  buildAndRender(data.curKey, data.curTxt, data.nextTxt, data.gapMin, period, {
+    mealIntent,
+    nextKey: data.nextKey,
+    scheduleMeta: data.scheduleMeta,
+    aiComment: comment,
+  });
+  fillManualFromAnalysis(data);
+  updateSavedTimetableUi();
+  const btnImg = document.getElementById('btnImg');
+  if (btnImg) btnImg.disabled = false;
+  showToast(`${sourceLabel} 완료 — 식당·셔틀 탭을 확인하세요`);
+  return data;
+}
+
+async function doAnalyzeFromTimetable() {
+  if (typeof TimetableUtil === 'undefined') {
+    showToast('시간표 모듈을 불러오지 못했어요');
+    return;
+  }
+  const classes = TimetableUtil.loadUserTimetable();
+  const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
+  if (isNoSchoolDay(ref)) {
+    const snap = TimetableUtil.analyzeNow(classes, ref);
+    await applyScheduleAnalysis(
+      { ...snap, gapSource: 'saved_timetable', warnings: [SchoolCalendar?.dayLabel(ref) + ' — 무수업'] },
+      '저장 시간표 (휴일)',
+    );
+    return;
+  }
+  const today = classes.filter((c) => c.dow === ref.getDay());
+  if (!today.length) {
+    showToast('오늘 수업이 저장된 시간표에 없어요. OCR로 주간 시간표를 먼저 저장해 주세요');
+    return;
+  }
+  const snap = TimetableUtil.analyzeNow(classes, ref);
+  await applyScheduleAnalysis({ ...snap, gapSource: 'saved_timetable', warnings: [] }, '저장 시간표 분석');
 }
 
 function handleFile(e) {
@@ -333,18 +606,48 @@ function isOpen(key, period) {
   return true;
 }
 
+/** 메뉴명 → 요리 종류 (중복 가능, 구체적 태그 우선) */
+const CUISINE_DETECT = [
+  ['중식', ['짜장', '짬뽕', '탕수육', '마파', '깐풍', '유린', '팔보', '마라', '꿔바', '난자', '양장피', '고추잡채', '유산슬', '깐쇼', '중국', '짬뽕밥', '짜장밥']],
+  ['일식', ['우동', '라멘', '초밥', '돈부리', '텐동', '규동', '가라아게', '가츠', '오야코', '야끼', '스시', '돈코츠', '회덮', '사케동', '카레우동', '냉우동']],
+  ['양식', ['스파게티', '파스타', '스테이크', '피자', '샌드위치', '크림', '로제', '오믈렛', '리조또', '햄버거', '치킨스테이크', '포크', '그라탕', '까스', '돈까스', '함박', '그릴', '베이컨']],
+  ['한식', ['비빔밥', '불고기', '갈비', '된장', '김치', '잡채', '해장', '삼계', '육개', '설렁', '냉면', '보쌈', '제육', '순대', '국밥', '찌개', '정식', '쌈밥', '나물', '덮밥', '볶음밥', '카레', '부대', '청국', '순두부', '동태', '감자탕', '곰탕', '뚝밥', '비빔', '죽', '밥']],
+];
+
 const TKEYS = {
-  매운맛: ['매운', '제육', '김치', '부대', '육개장', '닭갈비', '라면', '짬뽕', '마라', '불닭', '고추', '청양', '떡볶이', '순대국', '빨간'],
-  건강식: ['비빔밥', '나물', '두부', '콩나물', '미역', '샐러드', '현미', '잡곡', '채소', '닭가슴살', '그린', '저칼로리', '곤약', '두유', '닭죽'],
-  고기류: ['제육', '불고기', '갈비', '삼겹', '돼지', '닭', '함박', '돈까스', '목살', '차돌', '소고기', '양념육', '스테이크', '닭볶음', '오리', '육전'],
-  찌개류: ['찌개', '국밥', '순대', '해장', '갈비탕', '부대', '된장', '청국장', '순두부', '동태', '뚝배기', '설렁탕', '곰탕', '감자탕'],
-  면류: ['국수', '라면', '우동', '냉면', '스파게티', '덮밥', '볶음밥', '쌀국수', '짜장', '짬뽕', '파스타', '소면', '비빔면', '막국수', '칼국수'],
-  양식: ['스파게티', '파스타', '돈까스', '함박', '스테이크', '피자', '샌드위치', '크림', '로제', '오믈렛', '그라탕', '리조또', '치킨스테이크', '포크커틀릿'],
-  일식: ['우동', '라멘', '초밥', '돈부리', '텐동', '규동', '가라아게', '미소', '오야코동', '가츠동', '야끼소바', '타코야끼', '스시', '돈코츠'],
-  중식: ['짜장', '짬뽕', '탕수육', '마파두부', '볶음밥', '깐풍기', '유린기', '팔보채', '마라탕', '훠궈', '딤섬', '꿔바로우', '난자완스'],
-  한식: ['비빔밥', '불고기', '갈비', '된장', '김치', '잡채', '떡볶이', '순대', '해장국', '삼계탕', '육개장', '설렁탕', '냉면', '보쌈'],
-  가성비: [],
+  한식: CUISINE_DETECT.find(([t]) => t === '한식')[1],
+  중식: CUISINE_DETECT.find(([t]) => t === '중식')[1],
+  일식: CUISINE_DETECT.find(([t]) => t === '일식')[1],
+  양식: CUISINE_DETECT.find(([t]) => t === '양식')[1],
 };
+
+const CUISINE_TYPES = ['한식', '중식', '일식', '양식'];
+
+function detectMenuCuisines(name) {
+  const n = String(name || '');
+  const found = [];
+  for (const [cuisine, keys] of CUISINE_DETECT) {
+    if (keys.some((k) => n.includes(k))) found.push(cuisine);
+  }
+  if (!found.length) found.push('한식');
+  return found;
+}
+
+function cuisineMatchScore(menus, tastes) {
+  const selected = tastes?.length ? tastes : effectiveTastes();
+  if (!menus.length) return 0;
+  if (!selected.length) return 45;
+  let hit = 0;
+  const cuisineHits = { 한식: 0, 중식: 0, 일식: 0, 양식: 0 };
+  for (const m of menus) {
+    const cuisines = detectMenuCuisines(m.name);
+    for (const c of cuisines) cuisineHits[c] = (cuisineHits[c] || 0) + 1;
+    if (selected.some((t) => cuisines.includes(t))) hit++;
+  }
+  const ratio = hit / menus.length;
+  const favBoost = selected.reduce((s, t) => s + (cuisineHits[t] || 0) * 8, 0);
+  return Math.min(100, Math.round(ratio * 55 + favBoost + hit * 6));
+}
 
 const DELIVERY_LINKS = [
   { name: '배달의민족', url: 'https://www.baemin.com', icon: '🛵' },
@@ -368,41 +671,42 @@ function toggleDeliveryOptions() {
 }
 
 /** CampusDistance 미로드 시 폴백 */
-function scoreRestaurantLocal({ fromKey, nextKey, gapMin, restaurantKey, waitMin, matchCount, mode, status }) {
+function scoreRestaurantLocal(opts) {
+  if (typeof CampusDistance !== 'undefined' && typeof CampusDistance.scoreRestaurant === 'function') {
+    return CampusDistance.scoreRestaurant(opts);
+  }
+  const { gapMin, waitMin, matchCount, mode, status } = opts;
   if (status === 'closed') return { score: -9999 };
-  if (status === 'bad') return { score: -500 };
 
-  const walk =
-    typeof CampusDistance !== 'undefined' ? CampusDistance.walkToRest(fromKey, restaurantKey) : 8;
-  const back =
-    nextKey === 'none' || !nextKey
-      ? 0
-      : typeof CampusDistance !== 'undefined'
-        ? CampusDistance.walkToRest(restaurantKey, nextKey)
-        : 8;
-
-  const totalTime = walk + waitMin + 15 + back;
+  const gap = gapMin ?? 75;
+  const totalTime = 8 + waitMin + 15;
   const timeScore = Math.max(0, 100 - totalTime * 1.5);
   const waitScore = Math.max(0, 100 - waitMin * 2.5);
-  const matchScore = Math.min(100, matchCount * 30);
+  const matchScore = Math.min(100, typeof matchCount === 'number' ? matchCount : 0);
 
-  let w = 1.0;
-  try {
-    const weights = JSON.parse(localStorage.getItem('restaurant_weights') || '{}');
-    w = weights[restaurantKey] || 1.0;
-  } catch (e) {
-    /* ignore */
-  }
-
-  let score;
+  let wTime = 0.4;
+  let wWait = 0.2;
+  let wMatch = 0.4;
   if (mode === 'distance') {
-    score = (timeScore * 0.75 + waitScore * 0.2 + matchScore * 0.05) * w;
+    wTime = 0.78;
+    wWait = 0.17;
+    wMatch = 0.05;
   } else if (mode === 'food') {
-    score = (matchScore * 0.75 + timeScore * 0.15 + waitScore * 0.1) * w;
-  } else {
-    score = (timeScore * 0.4 + waitScore * 0.2 + matchScore * 0.4) * w;
+    wTime = 0.12;
+    wWait = 0.08;
+    wMatch = 0.8;
+  } else if (gap < 50) {
+    wTime = 0.62;
+    wWait = 0.18;
+    wMatch = 0.2;
+  } else if (gap >= 90 && totalTime <= 38) {
+    wTime = 0.28;
+    wWait = 0.12;
+    wMatch = 0.6;
   }
 
+  const statusMul = status === 'bad' ? 0.4 : status === 'warn' ? 0.88 : 1;
+  const score = (timeScore * wTime + waitScore * wWait + matchScore * wMatch) * statusMul;
   return { score: Math.round(score || 0) };
 }
 
@@ -444,18 +748,48 @@ function effectiveTastes() {
   } catch {
     learned = [];
   }
-  return [...new Set([...(P.tastes || []), ...learned])];
+  const learnedOk = learned.filter((t) => CUISINE_TYPES.includes(t));
+  return [...new Set([...(P.tastes || []), ...learnedOk])];
 }
 
 function tagsFromMenus(menus) {
   const tags = new Set();
   for (const m of menus) {
-    for (const [tag, keys] of Object.entries(TKEYS)) {
-      if (tag === '가성비' || !keys.length) continue;
-      if (keys.some((k) => m.name.includes(k))) tags.add(tag);
-    }
+    detectMenuCuisines(m.name).forEach((c) => tags.add(c));
   }
   return [...tags];
+}
+
+function openSettings() {
+  document.getElementById('obOv').style.display = 'flex';
+  tArr = [...(P.tastes || [])];
+  hVal = P.home || '';
+  document.querySelectorAll('#tasteG .chip').forEach((c) => {
+    c.classList.toggle('on', tArr.includes(c.dataset.v));
+  });
+  document.querySelectorAll('#homeG .chip').forEach((c) => {
+    c.classList.toggle('on', c.dataset.v === hVal);
+  });
+}
+
+const HEADER_TASTES = CUISINE_TYPES;
+
+function renderHeaderTasteChips() {
+  const box = document.getElementById('hpTasteChips');
+  if (!box) return;
+  box.innerHTML = HEADER_TASTES.map(
+    (t) =>
+      `<button type="button" class="hdr-taste-chip${(P.tastes || []).includes(t) ? ' on' : ''}" onclick="toggleHeaderTaste('${t}')">${t}</button>`,
+  ).join('');
+}
+
+function toggleHeaderTaste(t) {
+  if (!P.tastes) P.tastes = [];
+  P.tastes = P.tastes.includes(t) ? P.tastes.filter((x) => x !== t) : [...P.tastes, t];
+  saveProfile();
+  renderHeaderTasteChips();
+  updateLearnedDisplay();
+  if (lastData) drawFood();
 }
 
 function updateLearnedDisplay() {
@@ -467,12 +801,16 @@ function updateLearnedDisplay() {
   } catch {
     learned = [];
   }
-  if (!learned.length) {
+  const selected = [...(P.tastes || [])];
+  const parts = [];
+  if (selected.length) parts.push(`🌶 내 취향: <b>${selected.join(', ')}</b>`);
+  if (learned.length) parts.push(`🤖 AI 파악 취향: <b>${learned.join(', ')}</b>`);
+  if (!parts.length) {
     el.style.display = 'none';
     return;
   }
   el.style.display = 'block';
-  el.innerHTML = `🤖 AI 파악 취향: <b>${learned.join(', ')}</b>`;
+  el.innerHTML = parts.join('<br>');
 }
 
 function recordVisitLearning(restaurantKey, menus) {
@@ -517,27 +855,49 @@ function recordVisitLearning(restaurantKey, menus) {
 }
 
 function resetLearnData() {
+  if (
+    !confirm(
+      '이 기기에 저장된 방문·취향 학습 기록을 지울까요?\n(건의 메일, 저장 시간표, 대시보드 방문 기록은 유지됩니다)',
+    )
+  ) {
+    return;
+  }
   ['visit_history', 'taste_history', 'learned_tastes', 'restaurant_weights'].forEach((k) =>
     localStorage.removeItem(k),
   );
   updateLearnedDisplay();
   if (lastData) drawFood();
-  showToast('학습 데이터가 초기화됐어요');
+  showToast('학습 기록이 초기화됐어요');
 }
 
 function isMatch(name) {
-  return effectiveTastes().some((t) => (TKEYS[t] || []).some((k) => name.includes(k)));
+  const tastes = effectiveTastes();
+  if (!tastes.length) return false;
+  const cuisines = detectMenuCuisines(name);
+  return tastes.some((t) => cuisines.includes(t));
+}
+
+function isNoSchoolDay(d) {
+  if (typeof SchoolCalendar !== 'undefined' && SchoolCalendar.isNoSchoolDay) {
+    return SchoolCalendar.isNoSchoolDay(d);
+  }
+  const x = d || (typeof KST !== 'undefined' ? KST.now() : new Date());
+  const dow = x.getDay();
+  return dow === 0 || dow === 6;
 }
 
 function menuDayIndex(dayOffset = 0) {
-  return (new Date().getDay() + dayOffset) % 7;
+  const now = typeof KST !== 'undefined' ? KST.now() : new Date();
+  return (now.getDay() + dayOffset) % 7;
 }
 
 function getMenus(key, period, dayOffset = null) {
   const offset = dayOffset !== null ? dayOffset : dayMode === 'tomorrow' ? 1 : 0;
   const day = menuDayIndex(offset);
   const slot = period === 'dinner' ? 'd' : 'l';
-  const raw = ((MENUS[key] || {})[day] || {})[slot] || [];
+  const restaurantDays = MENUS[key];
+  const dayData = getMenuDayData(restaurantDays, day);
+  const raw = dayData?.[slot] || [];
   return raw.map((m) => ({
     name: m.n,
     tag: isMatch(m.n) ? 'match' : m.t || '없음',
@@ -562,9 +922,15 @@ async function doAnalyze() {
   const nxtTxt = document.getElementById('mNext').options[document.getElementById('mNext').selectedIndex].text;
   const gapMin = parseInt(document.getElementById('mGap').value, 10);
   const nextKey = document.getElementById('mNext').value;
-  const mealIntent = MealEngine.computeMealIntent(gapMin);
+  const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
+  const mealIntent = MealEngine.computeMealIntent(gapMin, ref);
   const period = mealIntent.period;
-  buildAndRender(cur, curTxt, nxtTxt, gapMin, period, { mealIntent, nextKey });
+  buildAndRender(cur, curTxt, nxtTxt, gapMin, period, {
+    mealIntent,
+    nextKey,
+    scheduleMeta: { gapSource: 'manual', timeline: [], warnings: [] },
+    aiComment: buildScheduleComment(cur, nextKey, gapMin, mealIntent, { gapSource: 'manual' }),
+  });
 }
 
 function buildAndRender(cur, curTxt, nxtTxt, gapMin, period, extra = {}) {
@@ -627,14 +993,14 @@ function buildAndRender(cur, curTxt, nxtTxt, gapMin, period, extra = {}) {
     bestScore = -9999;
   if (mealIntent.willEat) {
     Object.entries(식당).forEach(([k, v]) => {
-      const matchCount = v.메뉴.filter((m) => m.tag === 'match').length;
+      const tasteScore = cuisineMatchScore(v.메뉴, effectiveTastes());
       const { score } = getRestaurantScore({
         fromKey: cur,
         nextKey,
         gapMin,
         restaurantKey: k,
         waitMin: v.대기분,
-        matchCount,
+        matchCount: tasteScore,
         mode: rankMode,
         status: v.상태,
       });
@@ -667,21 +1033,24 @@ function buildAndRender(cur, curTxt, nxtTxt, gapMin, period, extra = {}) {
     현재위치: curTxt,
     다음수업: nxtTxt,
     공강분: gapMin,
-    공강텍스트: TimetableUtil?.formatGapText
-      ? TimetableUtil.formatGapText(gapMin)
-      : gapMin < 60
-        ? `${gapMin}분`
-        : gapMin < 90
-          ? '1시간 ~ 1시간 30분'
-          : '2시간 이상',
+    공강텍스트:
+      extra.scheduleMeta?.gapDetail ||
+      (TimetableUtil?.formatGapText
+        ? TimetableUtil.formatGapText(gapMin)
+        : gapMin < 60
+          ? `${gapMin}분`
+          : gapMin < 90
+            ? '1시간 ~ 1시간 30분'
+            : '2시간 이상'),
     시간대: tLabel,
     캠퍼스인원: crowd.인원,
-    총평: mealIntent.willEat ? mealIntent.reason : mealIntent.reason,
+    총평: extra.aiComment || (mealIntent.willEat ? mealIntent.reason : mealIntent.reason),
     mealIntent,
     segment,
     external,
     nextKey,
     rankMode,
+    scheduleMeta: extra.scheduleMeta || null,
     analyzedAt: typeof KST !== 'undefined' ? KST.format() : '',
     오늘: { 식당, 셔틀: sh, crowd },
     내일: buildTomorrow(cur, period),
@@ -700,9 +1069,24 @@ function buildTomorrow(cur, period) {
   const mult2 = (PMULT[period] || 1) * 1.1;
   const walkFn =
     typeof CampusDistance !== 'undefined' ? (k) => CampusDistance.walkToRest(cur, k) : () => 8;
+  const tomorrowDay = menuDayIndex(1);
   const 식당 = {};
   ['기숙사', '명진당', '교직원', '학생회관'].forEach((key) => {
     const walkMin = walkFn(key);
+    const tomorrowRef = typeof KST !== 'undefined' ? KST.now() : new Date();
+    tomorrowRef.setDate(tomorrowRef.getDate() + 1);
+    if (tomorrowDay === 0 || tomorrowDay === 6 || isNoSchoolDay(tomorrowRef)) {
+      식당[key] = {
+        상태: 'closed',
+        배지: isNoSchoolDay(tomorrowRef) && typeof SchoolCalendar !== 'undefined' && SchoolCalendar.isHoliday(tomorrowRef)
+          ? '공휴일 미운영'
+          : '주말 미운영',
+        메뉴: [],
+        혼잡도: 0,
+        추천여부: false,
+      };
+      return;
+    }
     if (!isOpen(key, period)) {
       식당[key] = { 상태: 'closed', 배지: '저녁 운영 없음', 도보분: walkMin, 대기분: 0, 혼잡도: 0, 추천여부: false, 메뉴: [] };
       return;
@@ -722,7 +1106,7 @@ function buildTomorrow(cur, period) {
     };
   });
   return {
-    예측: '내일도 오늘과 비슷한 혼잡도가 예상됩니다.',
+    예측: '내일 혼잡도 참고값 (데이터 수집·피드백 반영 중)',
     식당,
     셔틀: { 상태: 'warn', 설명: '내일 하교 시간대도 승강장 대기가 예상됩니다.', 대안: '진입로 셔틀 → 에버라인 환승을 미리 계획해두세요.', 혼잡도: 58 },
   };
@@ -730,14 +1114,45 @@ function buildTomorrow(cur, period) {
 
 function drawBoard() {
   const d = lastData;
+  const meta = d.scheduleMeta || {};
+  const sourceLbl =
+    meta.gapSource === 'saved_timetable'
+      ? '저장 시간표 (공강·요일)'
+      : meta.gapSource === 'timetable_classes' || meta.gapSource?.includes('classes')
+        ? '시간표 수업 목록 (공강·요일)'
+        : meta.gapSource === 'manual'
+          ? '수동 입력'
+          : 'AI OCR';
+  const crowdLbl = canUseTimetableForCrowd() ? '개인 시간표 집계' : '학기 스케줄 (campus_schedule)';
   document.getElementById('sbRows').innerHTML = [
+    ['분석 요일', meta.dowLabel ? `${meta.dowLabel}요일` : '-'],
     ['현재 위치', d.현재위치 || '-'],
     ['다음 수업', d.다음수업 || '-'],
-    ['공강 시간', d.공강텍스트 || '-'],
+    ['공강 시간', meta.gapDetail || d.공강텍스트 || '-'],
+    ['요일별 수업', meta.weeklyLine || '-'],
+    ['공강·요일 분석', sourceLbl],
+    ['혼잡도 추정', crowdLbl],
     ['분석 시각', d.analyzedAt || 'KST'],
   ]
     .map(([k, v]) => `<div class="dr"><span class="dk">${k}</span><span class="dv">${v}</span></div>`)
     .join('');
+
+  const tlEl = document.getElementById('ttTimeline');
+  if (tlEl) {
+    const timeline = meta.timeline || [];
+    if (timeline.length) {
+      const dowTitle = meta.dowLabel ? `${meta.dowLabel}요일 · ` : '';
+      tlEl.innerHTML = `<div class="tt-tl-title">🗓 ${dowTitle}오늘 수업 (${timeline.length}개)</div>${timeline
+        .map((c) => {
+          const st = c.state === 'now' ? 'now' : c.state === 'done' ? 'done' : '';
+          const badge = c.state === 'now' ? ' · 지금' : c.state === 'done' ? ' · 종료' : '';
+          return `<div class="tt-tl-row ${st}"><span class="tt-tl-dot"></span><span class="tt-tl-time">${c.start}~${c.end}</span><span>${c.name}${badge}<br><span style="font-size:10px;color:var(--sub)">${c.label || c.buildingKey} ${c.room || ''}</span></span></div>`;
+        })
+        .join('')}`;
+    } else {
+      tlEl.innerHTML = '';
+    }
+  }
 
   document.getElementById('tAlert').innerHTML = d.mealIntent?.willEat
     ? `⚠️ ${d.오늘?.crowd?.설명 || '식사 파동'} · 동시 이동 <b>${d.캠퍼스인원}</b>`
@@ -801,29 +1216,36 @@ function drawFood() {
     { key: '학생회관', e: '🏢', n: '학생회관 식당' },
   ];
   const TMAP = { 추천: 'mt-rec', 인기: 'mt-hot', 신메뉴: 'mt-new', match: 'mt-match' };
-  const activeRankMode = rankMode || lastData.rankMode || 'balance';
+  const activeRankMode = rankMode;
+  const menuDayOff = dayMode === 'tomorrow' ? 1 : 0;
+  const menuRef = typeof KST !== 'undefined' ? KST.now() : new Date();
+  menuRef.setDate(menuRef.getDate() + menuDayOff);
+  const menuOffDay = isNoSchoolDay(menuRef);
 
   const scored = DEFS.map((def) => {
     const base = src.식당[def.key] || {};
     const openNow = isOpen(def.key, mealMode);
     const st = !openNow ? 'closed' : base.상태 || 'warn';
-    const menus = openNow ? getMenus(def.key, mealMode) : [];
+    const menus = openNow && !menuOffDay ? getMenus(def.key, mealMode, menuDayOff) : [];
     const walk = base.도보분 || 5;
     const back = base.복귀분 || 0;
     const wait = !openNow ? 0 : base.대기분 || 10;
     const cong = !openNow ? 0 : base.혼잡도 || 50;
     const total = base.총소요 || walk + wait + MEAL + back;
     const margin = base.trip?.margin ?? gapMin - total;
-    const matchB = menus.filter((m) => m.tag === 'match').length;
+    const liveCong = dayMode === 'today' && openNow ? getDynamicCrowd(def.key) : cong;
+    const liveWait = openNow ? waitMin(liveCong) : 0;
+    const liveSt = !openNow ? 'closed' : liveCong >= 80 ? 'bad' : liveCong >= 55 ? 'warn' : 'ok';
+    const tasteScore = cuisineMatchScore(menus, effectiveTastes());
     const { score } = getRestaurantScore({
       fromKey: lastData.현재건물키 || '3공',
       nextKey,
       gapMin,
       restaurantKey: def.key,
-      waitMin: wait,
-      matchCount: matchB,
+      waitMin: liveWait,
+      matchCount: tasteScore,
       mode: activeRankMode,
-      status: st,
+      status: liveSt,
     });
     return { ...def, base, st, menus, walk, back, wait, cong, total, margin, score, openNow };
   }).sort((a, b) => b.score - a.score);
@@ -865,17 +1287,29 @@ function drawFood() {
       menuHtml =
         '<div class="menu-box"><div class="menu-ttl" style="color:var(--gray)">영업 종료</div><div style="font-size:12px;color:var(--sub);padding:4px 0">해당 시간대에는 영업하지 않습니다</div></div>';
     } else if (!menus.length) {
-      menuHtml = `<div class="menu-box"><div class="menu-ttl">${mealLbl} 메뉴</div><div style="font-size:12px;color:var(--sub)">공식 식단 없음</div></div>`;
+      const dayIdx = menuDayIndex(menuDayOff);
+      const weekendMsg = menuOffDay
+        ? typeof SchoolCalendar !== 'undefined' && SchoolCalendar.isHoliday(menuRef)
+          ? '공휴일 식단 미제공'
+          : '주말 식단 미제공'
+        : '공식 식단 없음';
+      menuHtml = `<div class="menu-box"><div class="menu-ttl">${mealLbl} 메뉴</div><div style="font-size:12px;color:var(--sub)">${weekendMsg}</div></div>`;
     } else {
       const items = sortedM
         .slice(0, 4)
         .map((m) => {
           const tc = TMAP[m.tag] || '';
-          const tagSpan = tc ? `<span class="mt ${tc}">${m.tag === 'match' ? '🌶' : m.tag}</span>` : '';
+          const tagSpan =
+            m.tag === 'match'
+              ? `<span class="mt mt-match">🌶 취향</span>`
+              : tc
+                ? `<span class="mt ${tc}">${m.tag}</span>`
+                : '';
           return `<div class="mrow"><div class="mname">${m.name}${tagSpan}</div></div>`;
         })
         .join('');
-      menuHtml = `<div class="menu-box menu-compact"><div class="menu-ttl">${mealLbl}${matchMs.length ? ' · 취향🌶' : ''}</div><div class="menu-grid">${items}</div></div>`;
+      const menuTtl = `${mealLbl}${matchMs.length ? ` · <span style="color:#d97706">취향 ${matchMs.length}개 매칭 🌶</span>` : ''}`;
+      menuHtml = `<div class="menu-box menu-compact"><div class="menu-ttl">${menuTtl}</div><div class="menu-grid">${items}</div></div>`;
     }
 
     const instaUrl = INSTA[row.key];
@@ -1046,10 +1480,53 @@ function buildShuttleUpcomingList(events, nowM, streamMoving = false) {
   return out.sort((a, b) => a.depM - b.depM);
 }
 
+const SHUTTLE_DOW_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
+
+function getWeekendShuttleReturn(schedule) {
+  const dow = getKstNow().getDay();
+  if (dow !== 0 && dow !== 6) return null;
+  const tomorrow = (dow + 1) % 7;
+  const isWeekday = tomorrow >= 1 && tomorrow <= 5;
+  return {
+    statusText: isWeekday
+      ? `주말 미운행 · 내일(${SHUTTLE_DOW_NAMES[tomorrow]}요일) 첫차 08:15 출발 예정`
+      : '주말·공휴일 미운행',
+    statusCls: 'bad',
+    upcoming: [],
+    after18: false,
+    limit18: schedule?.limit18 || '',
+    hint: '주말·공휴일에는 학기중 통학버스가 운행하지 않습니다.',
+    isTomorrow: false,
+  };
+}
+
+function getTomorrowViewWeekendReturn(schedule, viewDow) {
+  if (viewDow !== 0 && viewDow !== 6) return null;
+  const dayAfter = (viewDow + 1) % 7;
+  const isWeekday = dayAfter >= 1 && dayAfter <= 5;
+  return {
+    statusText: isWeekday
+      ? `주말·공휴일 미운행 · ${SHUTTLE_DOW_NAMES[dayAfter]}요일 첫차 08:15 출발 예정`
+      : '주말·공휴일 미운행',
+    statusCls: 'bad',
+    upcoming: [],
+    after18: false,
+    limit18: schedule?.limit18 || '',
+    hint: '주말·공휴일에는 학기중 통학버스가 운행하지 않습니다.',
+    isTomorrow: true,
+  };
+}
+
+function buildShuttleTomorrowFullList(events) {
+  return [...events]
+    .sort((a, b) => a.depM - b.depM)
+    .map((ev) => ({ ...ev, isPast: false, isTomorrow: true, remain: 0, hl: false }));
+}
+
 function getShuttleCongestionHint() {
   const dow = getKstNow().getDay();
   const nowM = getKstMinutes();
-  if (dow === 0 || dow === 6) return '주말·공휴일은 학기중 셔틀 미운행입니다.';
+  if (isNoSchoolDay(getKstNow())) return '주말·공휴일은 학기중 셔틀 미운행입니다.';
   if (dow === 4 || dow === 5) {
     if (nowM >= 14 * 60 && nowM < 18 * 60) {
       return '📌 목·금 오후는 공강·하교가 겹쳐 승차 대기 15~25분 예상될 수 있어요.';
@@ -1066,16 +1543,8 @@ function analyzeSchoolDepart(schedule, opts = {}) {
   const nowM = getKstMinutes();
   const travel = schedule.travelMin || 15;
   const dow = getKstNow().getDay();
-  if (dow === 0 || dow === 6) {
-    return {
-      statusText: '주말·공휴일 미운행',
-      statusCls: 'bad',
-      upcoming: [],
-      after18: false,
-      limit18: schedule.limit18,
-      hint: getShuttleCongestionHint(),
-    };
-  }
+  const weekend = getWeekendShuttleReturn(schedule);
+  if (weekend) return weekend;
 
   const raw = schedule.schoolDepart || [];
   const events = raw.map((item) => {
@@ -1133,23 +1602,46 @@ function analyzeSchoolDepart(schedule, opts = {}) {
     hint: getShuttleCongestionHint(),
     events,
     moving,
+    isTomorrow: false,
+  };
+}
+
+function analyzeSchoolDepartTomorrow(schedule, opts = {}) {
+  const travel = schedule.travelMin || 15;
+  const viewDow = (getKstNow().getDay() + 1) % 7;
+  const weekend = getTomorrowViewWeekendReturn(schedule, viewDow);
+  if (weekend) return weekend;
+  const events = (schedule.schoolDepart || []).map((item) => {
+    const time = typeof item === 'string' ? item : item.t;
+    const type = typeof item === 'string' ? opts.defaultType || '셔틀' : item.type;
+    const depM = shTimeToMin(time);
+    return {
+      depart: time,
+      depM,
+      arrM: depM + travel,
+      arrive: shMinToStr(depM + travel),
+      type,
+      kind: opts.kindLabel || '하교',
+    };
+  });
+  events.sort((a, b) => a.depM - b.depM);
+  const first = events[0];
+  return {
+    statusText: first ? `내일 첫차 ${first.depart} 출발 예정` : '내일 운행 시간표 확인',
+    statusCls: 'ok',
+    upcoming: buildShuttleTomorrowFullList(events),
+    after18: false,
+    limit18: schedule.limit18,
+    hint: '',
+    isTomorrow: true,
   };
 }
 
 function analyzeGiheungShuttle() {
   const nowM = getKstMinutes();
   const travel = GIHEUNG_SCHEDULE.travelMin;
-  const dow = getKstNow().getDay();
-  if (dow === 0 || dow === 6) {
-    return {
-      statusText: '주말·공휴일 미운행',
-      statusCls: 'bad',
-      upcoming: [],
-      after18: false,
-      limit18: GIHEUNG_SCHEDULE.limit18,
-      hint: getShuttleCongestionHint(),
-    };
-  }
+  const weekend = getWeekendShuttleReturn(GIHEUNG_SCHEDULE);
+  if (weekend) return weekend;
 
   const toCampus = GIHEUNG_SCHEDULE.arriveCampus.map((arr) => {
     const arrM = shTimeToMin(arr);
@@ -1212,6 +1704,49 @@ function analyzeGiheungShuttle() {
     after18: nowM >= shTimeToMin('18:00'),
     limit18: GIHEUNG_SCHEDULE.limit18,
     hint: getShuttleCongestionHint(),
+    isTomorrow: false,
+  };
+}
+
+function analyzeGiheungShuttleTomorrow() {
+  const travel = GIHEUNG_SCHEDULE.travelMin;
+  const viewDow = (getKstNow().getDay() + 1) % 7;
+  const weekend = getTomorrowViewWeekendReturn(GIHEUNG_SCHEDULE, viewDow);
+  if (weekend) return weekend;
+  const toCampus = GIHEUNG_SCHEDULE.arriveCampus.map((arr) => {
+    const arrM = shTimeToMin(arr);
+    const depM = arrM - travel;
+    return {
+      depart: shMinToStr(depM),
+      depM,
+      arrM,
+      arrive: arr,
+      type: '기흥역발',
+      kind: '등교',
+    };
+  });
+  const schoolEvents = GIHEUNG_SCHEDULE.schoolDepart.map((t) => {
+    const depM = shTimeToMin(t);
+    return {
+      depart: t,
+      depM,
+      arrM: depM + travel,
+      arrive: shMinToStr(depM + travel),
+      type: '기흥역행',
+      kind: '하교',
+    };
+  });
+  const allEvents = [...toCampus, ...schoolEvents];
+  const firstArr = GIHEUNG_SCHEDULE.arriveCampus[0];
+  const firstDep = firstArr ? shMinToStr(shTimeToMin(firstArr) - travel) : '08:15';
+  return {
+    statusText: `내일 첫차 ${firstDep} 출발 예정`,
+    statusCls: 'ok',
+    upcoming: buildShuttleTomorrowFullList(allEvents),
+    after18: false,
+    limit18: GIHEUNG_SCHEDULE.limit18,
+    hint: '',
+    isTomorrow: true,
   };
 }
 
@@ -1220,10 +1755,16 @@ function renderShuttleCard(containerId, title, route, analysis, modalKind) {
   if (!el) return;
   const bc = analysis.statusCls === 'ok' ? 'bdg-g' : analysis.statusCls === 'bad' ? 'bdg-r' : 'bdg-o';
   const shcCls = analysis.statusCls === 'ok' ? 'shc-ok' : analysis.statusCls === 'bad' ? 'shc-bad' : 'shc-warn';
+  const upTitle = analysis.isTomorrow
+    ? '📅 내일 전체 시간표'
+    : '⏱ 직전·2시간 이내 (학교 출발·도착 기준)';
   const upHtml = analysis.upcoming.length
-    ? `<div class="sh-upcoming"><div style="font-weight:700;color:var(--navy);margin-bottom:6px">⏱ 직전·2시간 이내 (학교 출발·도착 기준)</div>${analysis.upcoming
+    ? `<div class="sh-upcoming"><div style="font-weight:700;color:var(--navy);margin-bottom:6px">${upTitle}</div>${analysis.upcoming
         .map((u) => {
           const label = u.kind === '등교' ? `기흥역 ${u.depart} → 캠퍼스 ${u.arrive}` : `학교 ${u.depart} 출발 · ${u.type || ''}`;
+          if (analysis.isTomorrow) {
+            return `<div class="sh-up-row"><span>${label}</span><span>도착 ${u.arrive}</span></div>`;
+          }
           if (u.isPast) {
             return `<div class="sh-up-row past"><span>${label}</span><span class="sh-past-lbl">지난 버스</span></div>`;
           }
@@ -1231,7 +1772,7 @@ function renderShuttleCard(containerId, title, route, analysis, modalKind) {
           return `<div class="sh-up-row${u.hl ? ' hl' : ''}"><span>${label}</span><span>${timeLbl}</span></div>`;
         })
         .join('')}</div>`
-    : '<div class="sh-upcoming" style="color:var(--sub)">2시간 이내 예정 버스 없음</div>';
+    : `<div class="sh-upcoming" style="color:var(--sub)">${analysis.isTomorrow ? '내일 운행 시간표 없음' : '2시간 이내 예정 버스 없음'}</div>`;
   const hintHtml = analysis.hint ? `<div class="sh-limit" style="color:#1e40af;background:#eff6ff;border-color:#bfdbfe">${analysis.hint}</div>` : '';
 
   el.innerHTML = `<div class="shc ${shcCls} on" style="margin-bottom:12px">
@@ -1250,18 +1791,33 @@ function renderShuttleCard(containerId, title, route, analysis, modalKind) {
 function drawShuttle() {
   const n = getKstNow();
   const kstEl = document.getElementById('shKstNow');
+  const dayLbl = dayMode === 'tomorrow' ? '내일 예측' : '오늘 실시간';
+  const viewDow = dayMode === 'tomorrow' ? (n.getDay() + 1) % 7 : n.getDay();
   if (kstEl) {
-    kstEl.textContent = `${['일', '월', '화', '수', '목', '금', '토'][n.getDay()]} ${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')} KST`;
+    kstEl.textContent = `${dayLbl} · ${SHUTTLE_DOW_NAMES[viewDow]} ${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')} KST`;
   }
-  const gi = analyzeGiheungShuttle();
-  const ent = analyzeSchoolDepart(ENTRANCE_SHUTTLE_SCHEDULE, {
-    defaultType: '진입로',
-    destLabel: '명지대역·시내',
-  });
-  const city = analyzeSchoolDepart(CITY_SHUTTLE_SCHEDULE, {
-    defaultType: '시내행',
-    destLabel: '용인 시내',
-  });
+  let gi, ent, city;
+  if (dayMode === 'tomorrow') {
+    gi = analyzeGiheungShuttleTomorrow();
+    ent = analyzeSchoolDepartTomorrow(ENTRANCE_SHUTTLE_SCHEDULE, {
+      defaultType: '진입로',
+      destLabel: '명지대역·시내',
+    });
+    city = analyzeSchoolDepartTomorrow(CITY_SHUTTLE_SCHEDULE, {
+      defaultType: '시내행',
+      destLabel: '용인 시내',
+    });
+  } else {
+    gi = analyzeGiheungShuttle();
+    ent = analyzeSchoolDepart(ENTRANCE_SHUTTLE_SCHEDULE, {
+      defaultType: '진입로',
+      destLabel: '명지대역·시내',
+    });
+    city = analyzeSchoolDepart(CITY_SHUTTLE_SCHEDULE, {
+      defaultType: '시내행',
+      destLabel: '용인 시내',
+    });
+  }
   renderShuttleCard('shGiheung', '🚌 기흥역 통학버스', '명지대역 ↔ 캠퍼스 (진입로)', gi, 'giheung');
   renderShuttleCard('shEntrance', '🚏 진입로 셔틀', '캠퍼스 → 명지대역 / 시내 (학교 출발)', ent, 'entrance');
   renderShuttleCard('shSinae', '🚍 시내 셔틀', '캠퍼스 → 용인 시내 (학교 출발 10회/일)', city, 'city');
@@ -1344,24 +1900,30 @@ function renderShuttleModalBody() {
     });
   }
 
-  const completed = rows.filter((r) => r.arrM <= nowM);
-  const lastPast = completed.length ? completed[completed.length - 1] : null;
-  const future = rows.filter((r) => r.depM > nowM && r.depM <= nowM + 120);
-  const inFlight = rows.find((r) => nowM >= r.depM && nowM < r.arrM);
-  const firstUp = future[0];
-
-  let display = [];
-  if (lastPast) display.push({ ...lastPast, isPast: true });
-  if (inFlight) display.push({ ...inFlight, isPast: false, isMoving: true });
-  display = [
-    ...display,
-    ...future.map((r) => ({
-      ...r,
-      isPast: false,
-      isMoving: false,
-      next: !inFlight && firstUp && r.depM === firstUp.depM,
-    })),
-  ];
+  let display;
+  if (dayMode === 'tomorrow') {
+    display = rows
+      .sort((a, b) => a.depM - b.depM)
+      .map((r) => ({ ...r, isPast: false, isMoving: false, next: false }));
+  } else {
+    const completed = rows.filter((r) => r.arrM <= nowM);
+    const lastPast = completed.length ? completed[completed.length - 1] : null;
+    const future = rows.filter((r) => r.depM > nowM && r.depM <= nowM + 120);
+    const inFlight = rows.find((r) => nowM >= r.depM && nowM < r.arrM);
+    const firstUp = future[0];
+    display = [];
+    if (lastPast) display.push({ ...lastPast, isPast: true });
+    if (inFlight) display.push({ ...inFlight, isPast: false, isMoving: true });
+    display = [
+      ...display,
+      ...future.map((r) => ({
+        ...r,
+        isPast: false,
+        isMoving: false,
+        next: !inFlight && firstUp && r.depM === firstUp.depM,
+      })),
+    ];
+  }
 
   const schedRows = display.length
     ? display
@@ -1425,14 +1987,8 @@ async function doAnalyzeImg() {
       throw new Error(data.error || '분석 실패');
     }
 
-    const h = new Date().getHours();
-    const period = h >= 17 ? 'dinner' : 'lunch';
-    const mealIntent = data.mealIntent || MealEngine.computeMealIntent(data.gapMin);
-    buildAndRender(data.curKey, data.curTxt, data.nextTxt, data.gapMin, period, {
-      mealIntent,
-      nextKey: data.nextKey,
-    });
-    showToast('AI 시간표 분석 완료');
+    persistOcrClasses(data.classes);
+    await applyScheduleAnalysis(data, 'AI 시간표');
   } catch (err) {
     stopLd();
     document.getElementById('ldg').classList.remove('on');
@@ -1628,6 +2184,30 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('on'), 2600);
 }
 
-loadProfile();
-drawShuttle();
-setInterval(drawShuttle, 60000);
+async function bootApp() {
+  loadProfile();
+  if (typeof TimetableUtil !== 'undefined') TimetableUtil.loadUserTimetable();
+  updateSavedTimetableUi();
+  drawShuttle();
+  setInterval(drawShuttle, 60000);
+  await loadMenus();
+  await loadCampusSchedule();
+  await tryAutoAnalyzeFromSavedTimetable();
+}
+
+async function tryAutoAnalyzeFromSavedTimetable() {
+  if (typeof TimetableUtil === 'undefined' || lastData) return;
+  const classes = TimetableUtil.loadUserTimetable();
+  if (!classes.length) return;
+  const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
+  const dayKey = ref.toDateString();
+  if (sessionStorage.getItem('mb_auto_tt') === dayKey) return;
+  sessionStorage.setItem('mb_auto_tt', dayKey);
+  try {
+    await doAnalyzeFromTimetable();
+  } catch (e) {
+    console.warn('[auto timetable]', e);
+  }
+}
+
+bootApp();

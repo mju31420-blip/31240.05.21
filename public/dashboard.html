@@ -39,7 +39,7 @@
       box-shadow: 0 12px 40px rgba(7, 23, 48, 0.25);
     }
     .gate-title { font-size: 20px; font-weight: 700; color: var(--navy); margin-bottom: 8px; }
-    .gate-desc { font-size: 13px; color: var(--sub); margin-bottom: 16px; }
+    .gate-desc { font-size: 13px; color: var(--sub); margin-bottom: 16px; line-height: 1.5; }
     .gate-inp {
       width: 100%;
       padding: 12px 14px;
@@ -70,7 +70,18 @@
       margin-bottom: 20px;
     }
     .hdr h1 { font-size: 22px; margin-bottom: 4px; }
-    .hdr p { font-size: 12px; color: #93b8e8; }
+    .hdr p { font-size: 12px; color: #93b8e8; line-height: 1.5; }
+    .hdr a { color: #bfdbfe; }
+    .src-pill {
+      display: inline-block;
+      margin-top: 8px;
+      margin-right: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      background: rgba(255,255,255,0.12);
+      color: #dbeafe;
+    }
     .grid {
       display: grid;
       grid-template-columns: 1fr;
@@ -89,7 +100,6 @@
     }
     .card h2 { font-size: 14px; color: var(--navy); margin-bottom: 12px; }
     .chart-wrap { position: relative; height: 240px; }
-    .chart-wrap.tall { height: 200px; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
     th, td { padding: 8px 6px; border-bottom: 1px solid #f0f4fb; text-align: left; }
     th { color: var(--sub); font-weight: 600; }
@@ -120,7 +130,17 @@
       font-weight: 700;
     }
     .heat-lbl { font-size: 10px; color: var(--sub); text-align: center; margin-top: 4px; }
-    .loading { text-align: center; color: var(--sub); padding: 40px; }
+    .loading { text-align: center; color: var(--sub); padding: 40px; line-height: 1.6; }
+    .warn-box {
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      color: #9a3412;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 12px;
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
   </style>
 </head>
 <body>
@@ -128,7 +148,7 @@
 <div class="gate" id="gate">
   <div class="gate-box">
     <div class="gate-title">🔒 개발자 대시보드</div>
-    <div class="gate-desc">명비서 방문 데이터 분석 (개발팀 전용)</div>
+    <div class="gate-desc">명비서 방문·혼잡 피드백 분석 (개발팀 전용)<br>메인 앱과 <b>같은 브라우저</b>에서 기록한 데이터가 여기 표시됩니다.</div>
     <input class="gate-inp" id="pwIn" type="password" placeholder="비밀번호" autocomplete="off">
     <button class="gate-btn" type="button" id="pwBtn">입장</button>
     <div class="gate-err" id="pwErr"></div>
@@ -138,9 +158,14 @@
 <div class="dash" id="dash">
   <div class="hdr">
     <h1>📊 명비서 데이터 대시보드</h1>
-    <p>Firestore <code>visits</code> 컬렉션 · <span id="visitCount">0</span>건</p>
+    <p>
+      <span id="visitCount">0</span>건 ·
+      <a href="/">← 메인 앱</a>
+    </p>
+    <div id="srcPills"></div>
   </div>
   <div id="loadMsg" class="loading">데이터 불러오는 중…</div>
+  <div id="warnBox" class="warn-box" style="display:none"></div>
   <div class="grid" id="charts" style="display:none">
     <div class="card">
       <h2>📊 식당별 총 방문 수</h2>
@@ -166,7 +191,7 @@
       <div style="overflow-x:auto">
         <table>
           <thead>
-            <tr><th>시각</th><th>식당</th><th>혼잡도</th><th>만족도</th></tr>
+            <tr><th>시각</th><th>식당</th><th>혼잡도</th><th>만족도</th><th>출처</th></tr>
           </thead>
           <tbody id="recentTbl"></tbody>
         </table>
@@ -177,13 +202,85 @@
 
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-  import { getFirestore, collection, getDocs, query, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+  import {
+    getFirestore,
+    collection,
+    getDocs,
+    query,
+    orderBy,
+    limit,
+    connectFirestoreEmulator,
+  } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
   const PASS = '31420';
   const gate = document.getElementById('gate');
   const dash = document.getElementById('dash');
   const pwIn = document.getElementById('pwIn');
   const pwErr = document.getElementById('pwErr');
+
+  function normalizeRow(d, source) {
+    const tsRaw = d.timestamp;
+    const ts =
+      tsRaw?.toDate?.() ||
+      (tsRaw instanceof Date ? tsRaw : new Date(typeof tsRaw === 'number' ? tsRaw : tsRaw || Date.now()));
+    return {
+      restaurant: d.restaurant || '-',
+      satisfaction: d.satisfaction || 'neutral',
+      actualCrowd: Number(d.actualCrowd) || 40,
+      dow: d.dow ?? ts.getDay(),
+      hour: d.hour ?? ts.getHours(),
+      timestamp: ts,
+      source,
+    };
+  }
+
+  function loadLocalRows() {
+    const rows = [];
+    const seen = new Set();
+
+    function pushUnique(row) {
+      const key = `${row.timestamp.getTime()}|${row.restaurant}|${row.actualCrowd}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      rows.push(row);
+    }
+
+    try {
+      JSON.parse(localStorage.getItem('visits') || '[]').forEach((d) => {
+        pushUnique(normalizeRow(d, 'local visits'));
+      });
+    } catch (e) {
+      console.warn('visits parse', e);
+    }
+
+    try {
+      JSON.parse(localStorage.getItem('crowd_feedback') || '[]').forEach((d) => {
+        pushUnique(
+          normalizeRow(
+            {
+              ...d,
+              satisfaction: d.satisfaction || 'neutral',
+            },
+            'local feedback',
+          ),
+        );
+      });
+    } catch (e) {
+      console.warn('crowd_feedback parse', e);
+    }
+
+    return rows;
+  }
+
+  function mergeRows(localRows, remoteRows) {
+    const seen = new Set(localRows.map((r) => `${r.timestamp.getTime()}|${r.restaurant}|${r.actualCrowd}`));
+    const merged = [...localRows];
+    for (const r of remoteRows) {
+      const key = `${r.timestamp.getTime()}|${r.restaurant}|${r.actualCrowd}`;
+      if (!seen.has(key)) merged.push(r);
+    }
+    return merged.sort((a, b) => b.timestamp - a.timestamp);
+  }
 
   if (sessionStorage.getItem('mb_dash_ok') === '1') {
     gate.style.display = 'none';
@@ -209,52 +306,69 @@
   });
 
   async function boot() {
+    const localRows = loadLocalRows();
+    let remoteRows = [];
+    let remoteErr = null;
+    let remoteOk = false;
+
     let firebaseConfig = { projectId: 'myeong-biseo-v2' };
     try {
       const res = await fetch('/__/firebase/init.json');
       if (res.ok) firebaseConfig = await res.json();
     } catch (e) {
-      console.warn(e);
+      console.warn('init.json', e);
     }
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+    const isLocal =
+      location.hostname === 'localhost' || location.hostname === '127.0.0.1';
 
-    let rows = [];
     try {
+      const app = initializeApp(firebaseConfig);
+      const db = getFirestore(app);
+      if (isLocal) {
+        try {
+          connectFirestoreEmulator(db, '127.0.0.1', 8080);
+        } catch (e) {
+          console.warn('Firestore emulator', e.message);
+        }
+      }
       const snap = await getDocs(query(collection(db, 'visits'), orderBy('timestamp', 'desc'), limit(500)));
       snap.forEach((doc) => {
-        const d = doc.data();
-        const ts = d.timestamp?.toDate ? d.timestamp.toDate() : new Date(d.timestamp || Date.now());
-        rows.push({
-          restaurant: d.restaurant || '-',
-          satisfaction: d.satisfaction || 'neutral',
-          actualCrowd: Number(d.actualCrowd) || 40,
-          dow: d.dow ?? ts.getDay(),
-          hour: d.hour ?? ts.getHours(),
-          timestamp: ts,
-        });
+        remoteRows.push(normalizeRow(doc.data(), 'Firestore'));
       });
+      remoteOk = true;
     } catch (e) {
-      document.getElementById('loadMsg').textContent = 'Firestore 로드 실패: ' + e.message;
-      return;
+      remoteErr = e.message;
+      console.warn('Firestore', e);
     }
 
+    const rows = mergeRows(localRows, remoteRows);
+    const srcPills = document.getElementById('srcPills');
+    const pills = [];
+    if (localRows.length) pills.push(`로컬 ${localRows.length}건`);
+    if (remoteOk && remoteRows.length) pills.push(`Firestore ${remoteRows.length}건`);
+    if (remoteOk && !remoteRows.length) pills.push('Firestore 0건');
+    srcPills.innerHTML = pills.map((t) => `<span class="src-pill">${t}</span>`).join('');
+
+    const warnBox = document.getElementById('warnBox');
     if (!rows.length) {
-      try {
-        rows = JSON.parse(localStorage.getItem('visits') || '[]').map((d) => ({
-          ...d,
-          timestamp: new Date(d.timestamp),
-        }));
-      } catch {
-        rows = [];
+      warnBox.style.display = 'block';
+      warnBox.innerHTML =
+        '표시할 방문 기록이 없습니다.<br>① 메인 앱(<a href="/">/</a>) → 식당 탭 → 「방문 완료 기록」으로 피드백을 남기거나<br>② Firebase Hosting으로 열면 Firestore에도 저장됩니다.';
+      if (remoteErr) {
+        warnBox.innerHTML += `<br><br>Firestore: ${remoteErr}`;
       }
+    } else if (remoteErr && !remoteRows.length && localRows.length) {
+      warnBox.style.display = 'block';
+      warnBox.textContent = `Firestore 연결 실패 — 이 브라우저 로컬 기록만 표시 중 (${remoteErr})`;
+    } else {
+      warnBox.style.display = 'none';
     }
 
     document.getElementById('loadMsg').style.display = 'none';
-    document.getElementById('charts').style.display = 'grid';
+    document.getElementById('charts').style.display = rows.length ? 'grid' : 'none';
     document.getElementById('visitCount').textContent = String(rows.length);
-    renderCharts(rows);
+    if (rows.length) renderCharts(rows);
   }
 
   function renderCharts(rows) {
@@ -333,9 +447,7 @@
 
     const satLabel = { good: '😊', neutral: '😐', bad: '😞' };
     const crowdLabel = (v) => (v <= 20 ? '한산' : v <= 50 ? '보통' : v <= 75 ? '혼잡' : '매우혼잡');
-    const recent = [...rows]
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, 20);
+    const recent = [...rows].slice(0, 20);
     document.getElementById('recentTbl').innerHTML = recent
       .map(
         (r) =>
@@ -344,6 +456,7 @@
             <td>${r.restaurant}</td>
             <td>${crowdLabel(r.actualCrowd)} (${r.actualCrowd})</td>
             <td>${satLabel[r.satisfaction] || r.satisfaction}</td>
+            <td>${r.source || '-'}</td>
           </tr>`,
       )
       .join('');

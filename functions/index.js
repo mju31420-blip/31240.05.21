@@ -73,6 +73,9 @@ app.post(['/api/analyze/timetable', '/analyze/timetable'], async (req, res) => {
       gapMin: result.gapMin,
       nextKey: result.nextKey,
       mealIntent: result.mealIntent,
+      classes: result.classes || result.수업 || [],
+      warnings: result.warnings || [],
+      gapSource: result.gapSource || '',
     });
   } catch (err) {
     console.error('[api/analyze/timetable]', err.message);

@@ -57,20 +57,18 @@ export async function sendSuggestionEmail(payload) {
     .filter(Boolean)
     .join('\n');
 
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family:Malgun Gothic,sans-serif;line-height:1.6">${escapeHtml(text).replace(/\n/g, '<br>')}</body></html>`;
+  const htmlBody = `<body style="font-family:Malgun Gothic,sans-serif;line-height:1.6">${escapeHtml(text).replace(/\n/g, '<br>')}</body>`;
 
   await transport.sendMail({
     from,
     to,
     subject: utf8Subject(subjectRaw),
-    text,
-    html,
     encoding: 'base64',
-    charset: 'utf-8',
     headers: {
       'Content-Type': 'text/html; charset=UTF-8',
       'Content-Transfer-Encoding': 'base64',
     },
+    html: `<meta charset="UTF-8">${htmlBody}`,
   });
   return { sent: true, to };
 }

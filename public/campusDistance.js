@@ -67,15 +67,36 @@ window.CampusDistance = (function () {
 
   function scoreRestaurant({ fromKey, nextKey, gapMin, restaurantKey, waitMin, matchCount, mode, status }) {
     if (status === 'closed') return { score: -9999 };
-    if (status === 'bad') return { score: -500 };
 
     const walk = walkToRest(fromKey, restaurantKey);
-    const back = nextKey === 'none' || !nextKey ? 0 : walkToRest(restaurantKey, nextKey);
+    const back = nextKey === 'none' || !nextKey ? 0 : walkRestToBuilding(restaurantKey, nextKey);
+    const gap = gapMin ?? 75;
 
     const totalTime = walk + waitMin + 15 + back;
     const timeScore = Math.max(0, 100 - totalTime * 1.5);
     const waitScore = Math.max(0, 100 - waitMin * 2.5);
-    const matchScore = Math.min(100, matchCount * 30);
+    const matchScore = Math.min(100, typeof matchCount === 'number' ? matchCount : 0);
+
+    let wTime = 0.4;
+    let wWait = 0.2;
+    let wMatch = 0.4;
+    if (mode === 'distance') {
+      wTime = 0.78;
+      wWait = 0.17;
+      wMatch = 0.05;
+    } else if (mode === 'food') {
+      wTime = 0.12;
+      wWait = 0.08;
+      wMatch = 0.8;
+    } else if (gap < 50) {
+      wTime = 0.62;
+      wWait = 0.18;
+      wMatch = 0.2;
+    } else if (gap >= 90 && totalTime <= 38) {
+      wTime = 0.28;
+      wWait = 0.12;
+      wMatch = 0.6;
+    }
 
     let w = 1.0;
     try {
@@ -85,14 +106,8 @@ window.CampusDistance = (function () {
       /* ignore */
     }
 
-    let score;
-    if (mode === 'distance') {
-      score = (timeScore * 0.75 + waitScore * 0.2 + matchScore * 0.05) * w;
-    } else if (mode === 'food') {
-      score = (matchScore * 0.75 + timeScore * 0.15 + waitScore * 0.1) * w;
-    } else {
-      score = (timeScore * 0.4 + waitScore * 0.2 + matchScore * 0.4) * w;
-    }
+    const statusMul = status === 'bad' ? 0.4 : status === 'warn' ? 0.88 : 1;
+    const score = (timeScore * wTime + waitScore * wWait + matchScore * wMatch) * w * statusMul;
 
     return { score: Math.round(score || 0) };
   }
@@ -104,6 +119,7 @@ window.CampusDistance = (function () {
     REST_KEYS,
     walkToRest,
     walkB2B,
+    walkRestToBuilding,
     planRoundTrip,
     scoreRestaurant,
   };
