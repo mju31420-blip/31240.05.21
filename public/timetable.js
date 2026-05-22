@@ -1,6 +1,5 @@
 /**
  * 사용자 주간 시간표 (에브리타임 캡처 / OCR / 수동 저장)
- * 호실 → 건물키: Y19→3공, Y22→학생, Y25→자연, Y9/Y11→공2
  */
 window.USER_TIMETABLE = [
   { dow: 1, start: '09:00', end: '10:30', name: '환경과인간', room: 'Y2532', buildingKey: '자연', teacher: '조성경' },
@@ -8,7 +7,7 @@ window.USER_TIMETABLE = [
   { dow: 1, start: '14:30', end: '16:00', name: '전자기학', room: 'Y19127', buildingKey: '3공', teacher: '정의훈' },
 
   { dow: 2, start: '10:00', end: '11:30', name: '회로이론', room: 'Y19116', buildingKey: '3공', teacher: '강상희' },
-  { dow: 2, start: '12:00', end: '13:00', name: '채플', room: 'Y22217', buildingKey: '학생', teacher: '교목실' },
+  { dow: 2, start: '12:00', end: '13:00', name: '채플', room: 'Y22217', buildingKey: '채플', teacher: '교목실' },
   { dow: 2, start: '14:00', end: '16:00', name: '전기회로실험1', room: 'Y19319', buildingKey: '3공', teacher: '심재륜' },
 
   { dow: 3, start: '09:00', end: '10:30', name: '환경과인간', room: 'Y2532', buildingKey: '자연', teacher: '조성경' },
@@ -20,6 +19,35 @@ window.USER_TIMETABLE = [
   { dow: 4, start: '13:00', end: '15:00', name: '디지털논리회로실험', room: 'Y19319', buildingKey: '3공', teacher: '김태완' },
 ];
 
+/** 수동 입력·OCR 공통 캠퍼스 건물 (표시 순) */
+const CAMPUS_BUILDINGS = [
+  { key: '1공', label: '제1공학관' },
+  { key: '2공', label: '제2공학관' },
+  { key: '3공', label: '제3공학관 (Y19)' },
+  { key: '5공', label: '제5공학관 (Y5)' },
+  { key: '공2', label: '공학2관 (Y11)' },
+  { key: '명진당', label: '명진당 (Y3)' },
+  { key: '자연', label: '자연과학관 (Y7)' },
+  { key: '학생', label: '학생회관 (Y21)' },
+  { key: '창조', label: '창조관' },
+  { key: '채플', label: '채플관' },
+];
+
+const BUILDING_LABELS = Object.fromEntries(CAMPUS_BUILDINGS.map((b) => [b.key, b.label]));
+
+const BUILDING_ALIASES = {
+  '1공': ['1공', '제1공학관', '1공학관', '제1공'],
+  '2공': ['2공', '제2공학관', '2공학관', '제2공'],
+  '3공': ['3공', '제3공학관', '3공학관', 'Y19'],
+  '5공': ['5공', '제5공학관', '5공학관', 'Y5'],
+  공2: ['공2', '공학2관', 'Y11', 'Y9'],
+  명진당: ['명진당', '명진', 'Y3'],
+  자연: ['자연', '자연과학관', 'Y7', 'Y25'],
+  학생: ['학생', '학생회관', 'Y21', 'Y22'],
+  창조: ['창조', '창조관', '창의', '혁신'],
+  채플: ['채플', '채플관', '예배'],
+};
+
 const ROOM_PREFIX_MAP = [
   ['Y19', '3공'],
   ['Y22', '학생'],
@@ -30,16 +58,8 @@ const ROOM_PREFIX_MAP = [
   ['Y9', '공2'],
   ['Y5', '5공'],
   ['Y3', '명진당'],
+  ['Y1', '1공'],
 ];
-
-const BUILDING_LABELS = {
-  '3공': '제3공학관 (Y19)',
-  '5공': '제5공학관 (Y5)',
-  명진당: '명진당 (Y3)',
-  공2: '공학2관 (Y11)',
-  자연: '자연과학관 (Y7)',
-  학생: '학생회관 (Y21)',
-};
 
 const DOW_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -79,8 +99,11 @@ function resolveRoomToBuildingKey(room, fallbackKey) {
 function resolveBuildingKey(text) {
   if (!text || text === '없음' || String(text).includes('하교')) return null;
   const t = String(text);
+  for (const [key, aliases] of Object.entries(BUILDING_ALIASES)) {
+    if (aliases.some((a) => t.includes(a))) return key;
+  }
   for (const [key, label] of Object.entries(BUILDING_LABELS)) {
-    if (t.includes(key) || label.includes(t)) return key;
+    if (t.includes(key) || t.includes(label)) return key;
   }
   return resolveRoomToBuildingKey(t, null);
 }
@@ -115,7 +138,7 @@ function mergeTimetableClasses(existing, incoming) {
   const map = new Map();
   [...existing, ...incoming].forEach((c) => {
     if (!c?.start || c.dow == null) return;
-    const key = `${c.dow}|${c.start}|${c.name || ''}|${c.room || ''}`;
+    const key = `${c.dow}|${c.start}|${c.end}|${c.name || ''}|${c.room || ''}`;
     map.set(key, c);
   });
   return [...map.values()].sort((a, b) => a.dow - b.dow || t2m(a.start) - t2m(b.start));
@@ -135,13 +158,14 @@ function normalizeClass(raw) {
   if (!start || !end) return null;
   const refDow = typeof KST !== 'undefined' ? KST.now().getDay() : new Date().getDay();
   const dow = normalizeDow(raw.dow != null ? raw.dow : raw.요일, refDow);
+  const key = buildingKey && BUILDING_LABELS[buildingKey] ? buildingKey : resolveBuildingKey(buildingKey) || '3공';
   return {
     dow,
     start: String(start).slice(0, 5),
     end: String(end).slice(0, 5),
     name: raw.name || raw.과목 || raw.subject || '수업',
     room: room || '',
-    buildingKey: buildingKey || '3공',
+    buildingKey: key,
     teacher: raw.teacher || raw.교수 || '',
   };
 }
@@ -233,6 +257,7 @@ function analyzeFromClasses(classes, refDate = null) {
     lastEnded,
     nextClass,
     today,
+    noSchool,
     timeline: buildTodayTimeline(today, nowMin),
     gapSource: 'classes',
   };
@@ -272,6 +297,11 @@ function formatGapDetail(snap, refDate = null) {
   refDate = refDate || (typeof KST !== 'undefined' ? KST.now() : new Date());
   const dowLabel = DOW_NAMES[refDate.getDay()];
   const today = snap.today || [];
+  if (snap.noSchool) {
+    return typeof SchoolCalendar !== 'undefined' && SchoolCalendar.isHoliday(refDate)
+      ? `${dowLabel}요일 · 공휴일 (학교 휴무)`
+      : `${dowLabel}요일 · 주말 (학교 휴무)`;
+  }
   if (!today.length) return `${dowLabel}요일 — 등록된 수업 없음`;
 
   if (snap.inClass) {
@@ -290,13 +320,25 @@ function formatGapDetail(snap, refDate = null) {
   return `${dowLabel}요일 · 첫 수업 ${first.start} 전 ${snap.gapMin}분`;
 }
 
+function populateBuildingSelects() {
+  const cur = document.getElementById('mCur');
+  const next = document.getElementById('mNext');
+  if (!cur || !next) return;
+  const opts = CAMPUS_BUILDINGS.map((b) => `<option value="${b.key}">${b.label}</option>`).join('');
+  cur.innerHTML = opts;
+  next.innerHTML = `<option value="none">없음 (하교)</option>${opts}`;
+}
+
 window.TimetableUtil = {
+  CAMPUS_BUILDINGS,
   BUILDING_LABELS,
+  BUILDING_ALIASES,
   DOW_NAMES,
   normalizeDow,
   summarizeByDow,
   formatWeeklyDowLine,
   formatGapDetail,
+  populateBuildingSelects,
   ROOM_PREFIX_MAP,
   loadUserTimetable,
   saveUserTimetable,
@@ -307,7 +349,6 @@ window.TimetableUtil = {
   resolveBuildingKey,
   analyzeFromClasses,
 
-  /** 지금 시각 기준 상태 (저장된 시간표 우선) */
   analyzeNow(classes = null, refDate = null) {
     const list = classes || loadUserTimetable();
     return analyzeFromClasses(list, refDate);

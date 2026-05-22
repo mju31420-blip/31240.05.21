@@ -14,10 +14,6 @@ function getTransport() {
   });
 }
 
-function utf8Subject(subject) {
-  return `=?UTF-8?B?${Buffer.from(subject, 'utf8').toString('base64')}?=`;
-}
-
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, '&amp;')
@@ -49,7 +45,7 @@ export async function sendSuggestionEmail(payload) {
     `이름: ${name || '익명'}`,
     `거주: ${home || '-'}`,
     replyEmail ? `회신: ${replyEmail}` : '',
-    `시각: ${new Date().toLocaleString('ko-KR')}`,
+    `시각: ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`,
     '',
     '--- 내용 ---',
     body,
@@ -57,18 +53,19 @@ export async function sendSuggestionEmail(payload) {
     .filter(Boolean)
     .join('\n');
 
-  const htmlBody = `<body style="font-family:Malgun Gothic,sans-serif;line-height:1.6">${escapeHtml(text).replace(/\n/g, '<br>')}</body>`;
+  const htmlEscaped = escapeHtml(text).replace(/\n/g, '<br>\n');
+  const html = `<!DOCTYPE html>
+<html lang="ko">
+<head><meta charset="UTF-8"></head>
+<body style="font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;line-height:1.6;color:#111">${htmlEscaped}</body>
+</html>`;
 
   await transport.sendMail({
-    from,
+    from: { name: '명비서', address: from },
     to,
-    subject: utf8Subject(subjectRaw),
-    encoding: 'base64',
-    headers: {
-      'Content-Type': 'text/html; charset=UTF-8',
-      'Content-Transfer-Encoding': 'base64',
-    },
-    html: `<meta charset="UTF-8">${htmlBody}`,
+    subject: subjectRaw,
+    text,
+    html,
   });
   return { sent: true, to };
 }

@@ -633,20 +633,49 @@ function detectMenuCuisines(name) {
   return found;
 }
 
-function cuisineMatchScore(menus, tastes) {
+/**
+ * 오늘 식단 × 선택 취향(한식/중식/일식/양식) 적합도 0~100
+ * @returns {{ score: number, hits: number, breakdown: Record<string,number>, label: string }}
+ */
+function analyzeCuisineFit(menus, tastes) {
   const selected = tastes?.length ? tastes : effectiveTastes();
-  if (!menus.length) return 0;
-  if (!selected.length) return 45;
-  let hit = 0;
-  const cuisineHits = { 한식: 0, 중식: 0, 일식: 0, 양식: 0 };
+  const breakdown = { 한식: 0, 중식: 0, 일식: 0, 양식: 0 };
+  if (!menus.length) return { score: 0, hits: 0, breakdown, label: '메뉴 없음' };
+  if (!selected.length) return { score: 45, hits: 0, breakdown, label: '취향 미선택' };
+
+  let hits = 0;
   for (const m of menus) {
     const cuisines = detectMenuCuisines(m.name);
-    for (const c of cuisines) cuisineHits[c] = (cuisineHits[c] || 0) + 1;
-    if (selected.some((t) => cuisines.includes(t))) hit++;
+    cuisines.forEach((c) => {
+      breakdown[c] = (breakdown[c] || 0) + 1;
+    });
+    if (selected.some((t) => cuisines.includes(t))) hits++;
   }
-  const ratio = hit / menus.length;
-  const favBoost = selected.reduce((s, t) => s + (cuisineHits[t] || 0) * 8, 0);
-  return Math.min(100, Math.round(ratio * 55 + favBoost + hit * 6));
+
+  const n = menus.length;
+  const matchRatio = hits / n;
+  const focusRatio = Math.max(...selected.map((t) => (breakdown[t] || 0) / n));
+  const onlyOne = selected.length === 1;
+  const focusBoost = onlyOne ? focusRatio * 42 : focusRatio * 28;
+  const score = Math.min(
+    100,
+    Math.round(matchRatio * 48 + focusBoost + hits * 7 + selected.length * 3),
+  );
+  const top = selected
+    .map((t) => ({ t, c: breakdown[t] || 0 }))
+    .sort((a, b) => b.c - a.c)[0];
+  const label =
+    top && top.c > 0
+      ? `${top.t} ${top.c}/${n}메뉴`
+      : hits
+        ? `취향 ${hits}/${n}`
+        : '취향 메뉴 없음';
+
+  return { score, hits, breakdown, label };
+}
+
+function cuisineMatchScore(menus, tastes) {
+  return analyzeCuisineFit(menus, tastes).score;
 }
 
 const DELIVERY_LINKS = [
@@ -792,26 +821,8 @@ function toggleHeaderTaste(t) {
   if (lastData) drawFood();
 }
 
-function updateLearnedDisplay() {
-  const el = document.getElementById('hpLearned');
-  if (!el) return;
-  let learned = [];
-  try {
-    learned = JSON.parse(localStorage.getItem('learned_tastes') || '[]');
-  } catch {
-    learned = [];
-  }
-  const selected = [...(P.tastes || [])];
-  const parts = [];
-  if (selected.length) parts.push(`🌶 내 취향: <b>${selected.join(', ')}</b>`);
-  if (learned.length) parts.push(`🤖 AI 파악 취향: <b>${learned.join(', ')}</b>`);
-  if (!parts.length) {
-    el.style.display = 'none';
-    return;
-  }
-  el.style.display = 'block';
-  el.innerHTML = parts.join('<br>');
-}
+/** 학습·방문 집계는 dashboard.html 전용 — 메인 UI에는 표시하지 않음 */
+function updateLearnedDisplay() {}
 
 function recordVisitLearning(restaurantKey, menus) {
   const menuNames = menus.map((m) => m.name);
@@ -852,22 +863,6 @@ function recordVisitLearning(restaurantKey, menus) {
   }
 
   updateLearnedDisplay();
-}
-
-function resetLearnData() {
-  if (
-    !confirm(
-      '이 기기에 저장된 방문·취향 학습 기록을 지울까요?\n(건의 메일, 저장 시간표, 대시보드 방문 기록은 유지됩니다)',
-    )
-  ) {
-    return;
-  }
-  ['visit_history', 'taste_history', 'learned_tastes', 'restaurant_weights'].forEach((k) =>
-    localStorage.removeItem(k),
-  );
-  updateLearnedDisplay();
-  if (lastData) drawFood();
-  showToast('학습 기록이 초기화됐어요');
 }
 
 function isMatch(name) {
@@ -1340,6 +1335,39 @@ function drawFood() {
 }
 
 /* ════════════════════════════ 셔틀 실시간 (2026-1학기 공식표) ════ */
+const SHUTTLE_ROUTE_STOPS = {
+  entranceMyeongji: ['캠퍼스', '이마트', '상공회의소', '역북동행정복지센터', '명지대역'],
+  sinae: ['캠퍼스', '용인CGV', '중앙공영주차장', '명지대역'],
+};
+
+function formatShuttleRoute(stops) {
+  return stops.join(' → ');
+}
+
+const SHUTTLE_ROUTES = {
+  giheung: '기흥역 ↔ 캠퍼스 (진입로)',
+  entranceMyeongji: formatShuttleRoute(SHUTTLE_ROUTE_STOPS.entranceMyeongji),
+  entranceSinae: formatShuttleRoute(SHUTTLE_ROUTE_STOPS.sinae),
+  city: formatShuttleRoute(SHUTTLE_ROUTE_STOPS.sinae),
+};
+
+function getEntranceRouteForType(type) {
+  return type === '시내' ? SHUTTLE_ROUTES.entranceSinae : SHUTTLE_ROUTES.entranceMyeongji;
+}
+
+function renderShuttleRouteHtml(kind) {
+  if (kind === 'entrance') {
+    return `<div class="sh-route">
+      <div class="sh-route-row"><span class="sh-route-tag">명지대역</span>${SHUTTLE_ROUTES.entranceMyeongji}</div>
+      <div class="sh-route-row"><span class="sh-route-tag">시내</span>${SHUTTLE_ROUTES.entranceSinae}</div>
+    </div>`;
+  }
+  if (kind === 'city') {
+    return `<div class="sh-route"><div class="sh-route-row">${SHUTTLE_ROUTES.city}</div></div>`;
+  }
+  return `<div class="sh-route"><div class="sh-route-row">${SHUTTLE_ROUTES.giheung}</div></div>`;
+}
+
 const GIHEUNG_SCHEDULE = {
   /** 캠퍼스 도착 (기흥역 출발 +15분) */
   arriveCampus: ['08:30', '08:35', '09:30', '09:35', '10:30', '10:35', '12:30', '13:30', '14:30', '15:45', '16:45', '17:45', '18:45', '19:45'],
@@ -1775,10 +1803,11 @@ function renderShuttleCard(containerId, title, route, analysis, modalKind) {
     : `<div class="sh-upcoming" style="color:var(--sub)">${analysis.isTomorrow ? '내일 운행 시간표 없음' : '2시간 이내 예정 버스 없음'}</div>`;
   const hintHtml = analysis.hint ? `<div class="sh-limit" style="color:#1e40af;background:#eff6ff;border-color:#bfdbfe">${analysis.hint}</div>` : '';
 
+  const routeHtml = modalKind ? renderShuttleRouteHtml(modalKind) : `<div style="font-size:11px;color:var(--muted);margin-bottom:6px">📍 ${route}</div>`;
   el.innerHTML = `<div class="shc ${shcCls} on" style="margin-bottom:12px">
     <div class="sh-in">
       <div class="sh-hd"><div class="sh-name">${title}</div><span class="bdg ${bc}">${analysis.statusCls === 'ok' ? '원활' : analysis.statusCls === 'bad' ? '운행 종료' : '혼잡 주의'}</span></div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">📍 ${route}</div>
+      ${routeHtml}
       <div class="sh-desc"><b>🚌 현재 버스 상태</b><br>${analysis.statusText}</div>
       ${hintHtml}
       ${upHtml}
@@ -1818,9 +1847,9 @@ function drawShuttle() {
       destLabel: '용인 시내',
     });
   }
-  renderShuttleCard('shGiheung', '🚌 기흥역 통학버스', '명지대역 ↔ 캠퍼스 (진입로)', gi, 'giheung');
-  renderShuttleCard('shEntrance', '🚏 진입로 셔틀', '캠퍼스 → 명지대역 / 시내 (학교 출발)', ent, 'entrance');
-  renderShuttleCard('shSinae', '🚍 시내 셔틀', '캠퍼스 → 용인 시내 (학교 출발 10회/일)', city, 'city');
+  renderShuttleCard('shGiheung', '🚌 기흥역 통학버스', SHUTTLE_ROUTES.giheung, gi, 'giheung');
+  renderShuttleCard('shEntrance', '🚏 진입로 셔틀', '학교 출발 · 명지대역·시내', ent, 'entrance');
+  renderShuttleCard('shSinae', '🚍 시내 셔틀', '학교 출발 · 용인 시내', city, 'city');
 }
 
 let shModalKind = 'giheung';
@@ -1890,16 +1919,25 @@ function renderShuttleModalBody() {
         depM,
         arrM: depM + travel,
         sub: item.type,
+        route: getEntranceRouteForType(item.type),
       };
     });
   } else {
     const travel = CITY_SHUTTLE_SCHEDULE.travelMin;
     rows = CITY_SHUTTLE_SCHEDULE.schoolDepart.map((t) => {
       const depM = shTimeToMin(t);
-      return { depart: t, arrive: shMinToStr(depM + travel), depM, arrM: depM + travel, sub: '시내행' };
+      return {
+        depart: t,
+        arrive: shMinToStr(depM + travel),
+        depM,
+        arrM: depM + travel,
+        sub: '시내행',
+        route: SHUTTLE_ROUTES.city,
+      };
     });
   }
 
+  const routeBlock = renderShuttleRouteHtml(shModalKind);
   let display;
   if (dayMode === 'tomorrow') {
     display = rows
@@ -1929,15 +1967,23 @@ function renderShuttleModalBody() {
     ? display
         .map((r) => {
           const left = `${r.sub ? r.sub + ' · ' : ''}${shModalKind === 'giheung' && shModalTab === 'arrive' ? r.depart + ' 기흥역' : r.depart + ' 학교'} 출발`;
+          const routeLine = r.route ? `<div class="sched-route">${r.route}</div>` : '';
           if (r.isPast) {
-            return `<div class="sched-row past"><span>${left}</span><span class="sh-past-lbl">지난 버스 · 도착 ${r.arrive}</span></div>`;
+            return `<div class="sched-row past"><div><span>${left}</span>${routeLine}</div><span class="sh-past-lbl">지난 버스 · 도착 ${r.arrive}</span></div>`;
           }
-          return `<div class="sched-row${r.next ? ' next' : ''}"><span>${left}</span><span>도착 ${r.arrive}</span></div>`;
+          return `<div class="sched-row${r.next ? ' next' : ''}"><div><span>${left}</span>${routeLine}</div><span>도착 ${r.arrive}</span></div>`;
         })
         .join('')
-    : '<p style="color:var(--sub);font-size:12px;padding:8px 0">오늘 남은 운행 시간이 없습니다.</p>';
+    : `<p style="color:var(--sub);font-size:12px;padding:8px 0">${dayMode === 'tomorrow' ? '내일 운행 시간표 없음' : '오늘 남은 운행 시간이 없습니다.'}</p>`;
+
+  const viewDowModal = dayMode === 'tomorrow' ? (getKstNow().getDay() + 1) % 7 : getKstNow().getDay();
+  const weekendNote = [0, 6].includes(viewDowModal)
+    ? '<p class="sh-limit" style="margin-top:0;margin-bottom:10px">주말·공휴일에는 학기중 통학버스가 운행하지 않습니다.</p>'
+    : '';
 
   body.innerHTML =
+    routeBlock +
+    weekendNote +
     schedRows +
     `<p class="sh-limit" style="margin-top:12px">⚠️ ${
       shModalKind === 'giheung'

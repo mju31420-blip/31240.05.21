@@ -164,6 +164,7 @@ body{display:flex;justify-content:center}
 .tt-tl-dot{width:7px;height:7px;border-radius:50%;background:var(--border);flex-shrink:0}
 .tt-tl-row.now .tt-tl-dot{background:var(--blue)}
 .saved-tt-box{background:#f8fafc;border:1.5px solid var(--border);border-radius:12px;padding:12px;font-size:12px;color:var(--text);line-height:1.5;margin-bottom:10px}
+.tt-off-banner{background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;padding:10px 12px;font-size:11.5px;color:#92400e;line-height:1.45;margin:0 0 10px}
 .btn-ghost{width:100%;padding:10px;border-radius:10px;border:1.5px dashed var(--border);background:transparent;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;font-family:'Noto Sans KR',sans-serif}
 .sb-title{font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:10px}
 .dr{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #f0f4fb;font-size:12.5px}
@@ -288,14 +289,24 @@ body{display:flex;justify-content:center}
 }
 .data-phase-banner b{font-weight:700;color:var(--navy)}
 .data-phase-ico{flex-shrink:0;font-size:15px;line-height:1.2}
-.food-phase-note{
-  font-size:11px;color:var(--sub);line-height:1.45;
-  margin:0 0 10px;padding:8px 10px;
-  background:#f8fafc;border-radius:10px;border:1px solid var(--border);
+.food-pred-banner,.food-crowd-banner{
+  display:flex;align-items:flex-start;gap:8px;
+  margin:0 0 10px;padding:10px 12px;border-radius:12px;
+  font-size:11.5px;line-height:1.5;
 }
+.food-pred-banner{background:linear-gradient(135deg,#eff6ff,#f8fafc);border:1.5px solid #bfdbfe;color:#1e3a5f}
+.food-pred-banner--warn{background:linear-gradient(135deg,#fff7ed,#fef3c7);border-color:#fdba74;color:#9a3412}
+.food-pred-ico{flex-shrink:0;font-size:15px}
+.food-crowd-banner{background:#f0fdf4;border:1.5px solid #86efac;color:#166534;flex-direction:column}
+.food-crowd-banner .fcb-title{font-size:12.5px;font-weight:700;color:#166534;margin-bottom:2px}
+.food-crowd-banner .fcb-desc{font-size:11px;color:#15803d;margin:0 0 8px;line-height:1.45}
+.fcb-rest-row{display:flex;flex-wrap:wrap;gap:6px;width:100%;margin-bottom:8px}
+.fcb-rest-btn{padding:6px 10px;border-radius:16px;border:1.5px solid #86efac;background:#fff;font-size:11px;font-weight:700;color:#166534;cursor:pointer;font-family:'Noto Sans KR',sans-serif}
+.fcb-rest-btn.on{background:#166534;color:#fff;border-color:#166534}
 
 /* ── PRED CHIP ── */
 .pred-chip{display:inline-flex;align-items:center;gap:4px;background:#f0fdf4;border:1px solid #86efac;color:#166534;padding:5px 11px;border-radius:20px;font-size:10.5px;font-weight:700;margin-bottom:12px}
+.pred-chip--ref{background:#fff7ed;border-color:#fdba74;color:#9a3412}
 .gap-short-banner{background:#fff7ed;border:1.5px solid #fdba74;color:#9a3412;padding:10px 12px;border-radius:10px;font-size:12px;font-weight:700;margin-bottom:12px;text-align:center}
 
 /* ── SHUTTLE ── */
@@ -319,6 +330,11 @@ body{display:flex;justify-content:center}
 .sh-up-row.past{color:var(--sub);opacity:.85}
 .sh-past-lbl{font-size:10px;font-weight:700;color:var(--gray);white-space:nowrap}
 .sh-limit{margin-top:8px;font-size:11px;color:#b45309;line-height:1.5}
+.sh-route{font-size:11px;color:var(--sub);line-height:1.55;margin-bottom:8px;padding:8px 10px;background:rgba(0,0,0,.04);border-radius:8px}
+.sh-route-row{margin-top:4px}
+.sh-route-row:first-child{margin-top:0}
+.sh-route-tag{display:inline-block;font-size:10px;font-weight:700;color:var(--navy);background:#e8eef8;padding:2px 6px;border-radius:4px;margin-right:6px;vertical-align:top}
+.sched-route{font-size:10px;color:var(--muted);margin-top:3px;line-height:1.45}
 .btn-sh-sched{width:100%;margin-top:10px;padding:10px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:12.5px;font-weight:700;color:var(--navy);cursor:pointer;font-family:'Noto Sans KR',sans-serif}
 .modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:400;display:none;align-items:flex-end;justify-content:center}
 .modal-ov.on{display:flex}
@@ -330,7 +346,7 @@ body{display:flex;justify-content:center}
 .modal-tab{flex:1;padding:8px;border-radius:8px;border:none;background:#f1f5fb;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;font-family:'Noto Sans KR',sans-serif}
 .modal-tab.on{background:var(--navy);color:#fff}
 .modal-bd{padding:12px 16px calc(20px + env(safe-area-inset-bottom));overflow-y:auto;-webkit-overflow-scrolling:touch}
-.sched-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f4fb;font-size:12.5px;font-family:var(--mono)}
+.sched-row{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid #f0f4fb;font-size:12.5px;font-family:var(--mono)}
 .sched-row.past{color:var(--sub);text-decoration:line-through}
 .sched-row.next{color:var(--blue);font-weight:700;background:#eff6ff;border-radius:6px;padding:8px;margin:0 -4px}
 
@@ -399,12 +415,6 @@ body{display:flex;justify-content:center}
           <div class="chip" data-v="기숙사생"     onclick="togChip(this,'h')">🏠 기숙사</div>
         </div>
       </div>
-      <div class="ob-sec" style="margin-top:8px;padding-top:12px;border-top:1px solid #e8eef8">
-        <div class="ob-stitle">📊 개발·데이터</div>
-        <a href="/dashboard.html" class="btn-ob" style="display:block;text-align:center;text-decoration:none;margin-bottom:8px;background:#eef4ff;color:var(--navy)">데이터 대시보드 열기</a>
-        <button type="button" class="btn-again" style="width:100%;margin-bottom:6px" onclick="resetLearnData()">🔄 이 기기 학습 기록 초기화</button>
-        <div class="ob-sub" style="margin:0">방문·취향 학습만 삭제합니다. 건의 메일·저장 시간표는 그대로 둡니다.</div>
-      </div>
       <button class="btn-ob" onclick="doneOb()">시작하기 →</button>
     </div>
   </div>
@@ -432,7 +442,6 @@ body{display:flex;justify-content:center}
       <div class="hdr-prof">
         <div style="flex:1;min-width:0">
           <div class="hp-name">안녕하세요, <b id="hpName">주인님</b></div>
-          <div id="hpLearned" style="display:none;font-size:10px;color:#93b8e8;margin-top:3px"></div>
           <div class="hdr-taste-chips" id="hpTasteChips"></div>
         </div>
         <div class="hp-home" id="hpHome">거주 미설정</div>
@@ -471,30 +480,17 @@ body{display:flex;justify-content:center}
         <button class="mb" id="mImg" onclick="setMd('img')">📸 이미지 + AI</button>
       </div>
       <p class="tt-hint" id="ttHint" style="font-size:11px;color:var(--sub);margin:0 0 10px;line-height:1.45"></p>
+      <div id="ttOffBanner" class="tt-off-banner" style="display:none" role="status"></div>
 
       <!-- 수동 입력 -->
       <div id="manMode">
         <div class="fld">
           <label>방금 종료된 수업 위치</label>
-          <select id="mCur">
-            <option value="3공">제3공학관 (Y19)</option>
-            <option value="5공">제5공학관 (Y5)</option>
-            <option value="명진당">명진당 (Y3)</option>
-            <option value="공2">공학2관 (Y11)</option>
-            <option value="자연">자연과학관 (Y7)</option>
-            <option value="학생">학생회관 (Y21)</option>
-          </select>
+          <select id="mCur"></select>
         </div>
         <div class="fld">
           <label>다음 수업 위치</label>
-          <select id="mNext">
-            <option value="none">없음 (하교)</option>
-            <option value="3공">제3공학관 (Y19)</option>
-            <option value="5공">제5공학관 (Y5)</option>
-            <option value="명진당">명진당 (Y3)</option>
-            <option value="공2">공학2관 (Y11)</option>
-            <option value="자연">자연과학관 (Y7)</option>
-          </select>
+          <select id="mNext"></select>
         </div>
         <div class="fld">
           <label>공강 시간</label>
@@ -546,7 +542,7 @@ body{display:flex;justify-content:center}
     <!-- ═══ 식당 탭 ═══ -->
     <div class="pane" id="pane-food">
       <div id="foodRes">
-        <p class="food-phase-note">💡 혼잡도·순위는 학기 스케줄 기준 참고값입니다. <b>방문 완료 기록</b>을 남기면 데이터가 쌓이고 추천이 좋아집니다.</p>
+        <div id="foodPredBanner" class="food-pred-banner"></div>
         <!-- ★ 점심 / 저녁 토글 ★ -->
         <div class="meal-tog">
           <button class="meal-btn on" id="mLunch" onclick="setMeal('lunch')">☀️ 점심 식단</button>
@@ -633,32 +629,7 @@ body{display:flex;justify-content:center}
 </div>
 <div class="toast" id="toast"></div>
 
-<script type="module">
-  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-  import { getFirestore, collection, addDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
-
-  let firebaseConfig = { projectId: 'myeong-biseo-v2' };
-  try {
-    const res = await fetch('/__/firebase/init.json');
-    if (res.ok) firebaseConfig = await res.json();
-  } catch (e) {
-    console.warn('Firebase init.json 로드 실패 — Hosting 배포 후 자동 설정됩니다.', e);
-  }
-
-  const app = initializeApp(firebaseConfig);
-  window.db = getFirestore(app);
-
-  window.saveVisitToFirestore = async (data) => {
-    await addDoc(collection(window.db, 'visits'), {
-      restaurant: data.restaurant,
-      satisfaction: data.satisfaction,
-      actualCrowd: data.actualCrowd,
-      dow: data.dow,
-      hour: data.hour,
-      timestamp: data.timestamp || new Date(),
-    });
-  };
-</script>
+<script type="module" src="/analytics-sync.js"></script>
 <script src="/utils.js"></script>
 <script src="/kst.js" defer></script>
 <script src="/schoolCalendar.js" defer></script>

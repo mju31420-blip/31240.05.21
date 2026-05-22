@@ -14,7 +14,12 @@ const ROOM_PREFIX_MAP = [
   ['Y9', '공2'],
   ['Y5', '5공'],
   ['Y3', '명진당'],
+  ['Y1', '1공'],
 ];
+
+const DOW_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
+
+const BUILDING_KEYS_LIST = Object.keys(BUILDING_LABELS).join('|');
 
 function getClient(apiKey) {
   const key = apiKey || process.env.ANTHROPIC_API_KEY;
@@ -48,6 +53,22 @@ function resolveRoomToBuildingKey(room, fallbackKey) {
   return fallbackKey || null;
 }
 
+function normalizeDow(raw, refDow) {
+  if (raw == null || raw === '') return refDow;
+  if (typeof raw === 'string') {
+    const s = raw.trim();
+    const map = { 일: 0, 월: 1, 화: 2, 수: 3, 목: 4, 금: 5, 토: 6 };
+    if (map[s] != null) return map[s];
+    const n = parseInt(s, 10);
+    if (!Number.isNaN(n)) raw = n;
+  }
+  const d = Number(raw);
+  if (Number.isNaN(d)) return refDow;
+  if (d === 7) return 0;
+  if (d >= 0 && d <= 6) return d;
+  return refDow;
+}
+
 function timeToMin(t) {
   if (!t) return null;
   const m = String(t).match(/(\d{1,2}):(\d{2})/);
@@ -67,25 +88,24 @@ function normalizeClass(raw, refDow) {
   const start = raw.start || raw.시작;
   const end = raw.end || raw.종료;
   if (!start || !end) return null;
-  let dow = raw.dow != null ? Number(raw.dow) : raw.요일 != null ? Number(raw.요일) : refDow;
-  if (Number.isNaN(dow)) dow = refDow;
-  if (dow === 7) dow = 0;
-  if (dow < 0 || dow > 6) dow = refDow;
+  const dow = normalizeDow(raw.dow != null ? raw.dow : raw.요일, refDow);
+  const key = buildingKey && BUILDING_LABELS[buildingKey] ? buildingKey : '3공';
   return {
     dow,
     start: String(start).slice(0, 5),
     end: String(end).slice(0, 5),
     name: raw.name || raw.과목 || '수업',
     room: room || '',
-    buildingKey: buildingKey || '3공',
+    buildingKey: key,
     teacher: raw.teacher || raw.교수 || '',
   };
 }
 
 function analyzeFromClasses(classes, refDate) {
   const dow = refDate.getDay();
+  const noSchool = dow === 0 || dow === 6;
   const nowMin = refDate.getHours() * 60 + refDate.getMinutes();
-  const today = classes.filter((c) => c.dow === dow).sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
+  const today = noSchool ? [] : classes.filter((c) => c.dow === dow).sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
 
   let inClass = null;
   let lastEnded = null;
@@ -109,7 +129,7 @@ function analyzeFromClasses(classes, refDate) {
 
   let gapMin = 0;
   if (nextClass) gapMin = Math.max(0, timeToMin(nextClass.start) - gapFrom);
-  else if (dow === 0 || dow === 6 || !today.length) gapMin = 240;
+  else if (noSchool || !today.length) gapMin = 240;
   else if (lastEnded || inClass) gapMin = Math.max(90, 17 * 60 - gapFrom);
   else gapMin = 75;
 
@@ -127,87 +147,45 @@ function analyzeFromClasses(classes, refDate) {
   return { curKey, curTxt, nextKey, nextTxt, gapMin, inClass, lastEnded, nextClass, today };
 }
 
-function parseGapMinutes(value, classes = [], refDate) {
-  const n = parseInt(value, 10);
-  const todayCount = classes.filter((c) => c.dow === refDate.getDay()).length;
-  if (todayCount >= 1 || classes.length >= 2) {
-    const fromClasses = analyzeFromClasses(classes, refDate);
-    return fromClasses.gapMin;
-  }
-  if (!Number.isNaN(n) && n > 0) return Math.min(240, n);
-  const nowMin = refDate.getHours() * 60 + refDate.getMinutes();
-  const sorted = [...classes]
-    .map((c) => ({ start: timeToMin(c.start), end: timeToMin(c.end) }))
-    .filter((c) => c.start != null && c.end != null)
-    .sort((a, b) => a.start - b.start);
-  for (let i = 0; i < sorted.length - 1; i++) {
-    const gap = sorted[i + 1].start - sorted[i].end;
-    if (gap > 0 && sorted[i].end <= nowMin && sorted[i + 1].start >= nowMin) return gap;
-  }
-  return 75;
-}
-
 function refineFromParsed(parsed, refDate) {
-  const dow = refDate.getDay();
-  const warnings = [];
-  let classes = (parsed.수업 || [])
-    .map((c) => normalizeClass(c, dow))
+  const refDow = refDate.getDay();
+  const classes = (parsed.수업 || parsed.classes || [])
+    .map((c) => normalizeClass(c, refDow))
     .filter(Boolean);
 
-  if (classes.length) {
-    const computed = analyzeFromClasses(classes, refDate);
-    const aiGap = parseInt(parsed.공강분, 10);
-    let gapMin = computed.gapMin;
-    if (!Number.isNaN(aiGap) && Math.abs(aiGap - gapMin) > 20) {
-      warnings.push(`공강 ${aiGap}분 → 수업 목록 기준 ${gapMin}분으로 보정`);
-    }
+  if (!classes.length) {
     return {
-      ...computed,
-      gapMin,
-      classes,
-      warnings,
-      gapSource: 'classes_refined',
+      curKey: '3공',
+      curTxt: '캠퍼스',
+      nextKey: 'none',
+      nextTxt: '없음 (하교)',
+      gapMin: 75,
+      classes: [],
+      warnings: ['시간표에서 수업 시간을 읽지 못했습니다. 이미지를 다시 촬영해 주세요.'],
+      gapSource: 'no_classes',
+      today: [],
     };
   }
 
-  const curKey = resolveBuildingKey(parsed.현재건물키) || resolveBuildingKey(parsed.현재위치) || '3공';
-  const nextKey =
-    parsed.다음건물키 === null ? null : resolveBuildingKey(parsed.다음건물키) || resolveBuildingKey(parsed.다음수업);
-  const gapMin = parseGapMinutes(parsed.공강분, classes, refDate);
-
+  const computed = analyzeFromClasses(classes, refDate);
   return {
-    curKey,
-    curTxt: parsed.현재위치 || BUILDING_LABELS[curKey] || curKey,
-    nextKey: nextKey || 'none',
-    nextTxt:
-      !nextKey || String(parsed.다음수업 || '').includes('없음')
-        ? '없음 (하교)'
-        : parsed.다음수업 || BUILDING_LABELS[nextKey] || nextKey,
-    gapMin,
+    ...computed,
+    nextKey: computed.nextKey || 'none',
     classes,
-    warnings,
-    gapSource: 'ai_fields',
-    today: [],
+    warnings: [],
+    gapSource: 'timetable_classes',
   };
 }
 
 const SCHEMA_HINT = `{
-  "현재건물키":"3공|5공|명진당|공2|자연|학생",
-  "현재위치":"표시용 문자열",
-  "다음건물키":"3공|5공|명진당|공2|자연|학생|null",
-  "다음수업":"표시용 문자열",
-  "공강분":75,
   "수업":[
-    {"dow":1,"name":"과목명","room":"Y19221","start":"13:00","end":"14:30","buildingKey":"3공","teacher":"교수명"}
+    {"dow":1,"start":"09:00","end":"10:30","room":"Y19221","buildingKey":"3공","name":"과목명"}
   ]
 }`;
 
-const DOW_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
-
-const ROOM_GUIDE = `호실→건물: Y19→3공, Y5→5공, Y3→명진당, Y9/Y11→공2, Y7/Y25→자연, Y21/Y22→학생.
-에브리타임 열(요일칸) 기준 dow: 월=1, 화=2, 수=3, 목=4, 금=5, 토=6, 일=0 (JavaScript 규칙, 0=일~6=토).
-이미지에 보이는 주간 시간표의 모든 요일 수업을 "수업" 배열에 넣고, 각 항목에 dow·start·end·room·buildingKey를 반드시 포함.
-현재/다음 수업·공강 판단은 오늘 요일(dow) 수업만 사용.`;
+const ROOM_GUIDE = `호실→buildingKey: Y1→1공, Y19→3공, Y5→5공, Y3→명진당, Y9/Y11→공2, Y7/Y25→자연, Y21/Y22→학생, 채플→채플, 창조→창조.
+buildingKey 허용: ${BUILDING_KEYS_LIST}.
+에브리타임 열 dow: 월=1, 화=2, 수=3, 목=4, 금=5, 토=6, 일=0.`;
 
 export async function analyzeTimetableImage({ imageBase64, mediaType = 'image/jpeg', apiKey }) {
   const client = getClient(apiKey);
@@ -225,7 +203,7 @@ export async function analyzeTimetableImage({ imageBase64, mediaType = 'image/jp
   const hour12 = kstHour % 12 || 12;
   const dow = now.getDay();
   const todayName = DOW_NAMES[dow];
-  const timeContext = `현재 KST는 ${todayName}요일(dow=${dow}) ${ampm} ${hour12}시 ${kstMin}분입니다. 반드시 이 시각·요일 기준으로 현재 수업과 다음 수업을 판단해줘. 오전/오후·요일칸 혼동 금지.`;
+  const timeContext = `현재 KST는 ${todayName}요일(dow=${dow}) ${ampm} ${hour12}시 ${kstMin}분입니다.`;
 
   const msg = await client.messages.create({
     model: 'claude-sonnet-4-5',
@@ -239,13 +217,15 @@ export async function analyzeTimetableImage({ imageBase64, mediaType = 'image/jp
             type: 'text',
             text: `${timeContext}
 
-에브리타임 주간 시간표 이미지입니다.
+에브리타임 주간 시간표 이미지입니다. **수업 시간표 데이터만** 추출하세요.
+
 ${ROOM_GUIDE}
 
-1) 지금 진행 중이거나 방금 끝난 수업의 건물·과목
-2) 다음 수업 건물·과목 (없으면 null)
-3) 지금부터 다음 수업까지 공강 분(숫자)
-4) 주간 표의 전 요일 수업을 "수업" 배열에 dow 포함해 저장. 오늘은 ${todayName}요일(dow=${dow}) — 현재·다음·공강은 이 요일만 기준
+규칙:
+- JSON의 "수업" 배열에만 담기 (dow, start, end, room, buildingKey 필수 / name·teacher 선택)
+- 이미지에 보이는 **모든 요일**의 수업을 빠짐없이 포함
+- 현재건물·다음건물·공강분·혼잡도·메뉴 등 **다른 필드는 출력하지 마세요** (앱이 KST 시각으로 계산)
+- 과목 색·메모·친구시간표 등 시간표 외 정보 무시
 
 JSON만 출력:
 ${SCHEMA_HINT}`,
