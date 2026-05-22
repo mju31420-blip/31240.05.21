@@ -63,7 +63,7 @@ window.MealEngine = (function () {
       id: 'all',
       label: home || '미설정',
       hint: '공강·왕복 도보·메뉴 매칭으로 추천합니다.',
-      isCommute: home.includes('통학'),
+      isCommute: home === '기흥역행' || home === '시내행' || home.includes('통학') || (home.includes('행') && home !== '기숙사생'),
       isDorm: home === '기숙사생',
     };
   }

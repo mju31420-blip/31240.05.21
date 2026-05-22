@@ -54,13 +54,22 @@ export function getUserSegment(home = '') {
       hint: '저녁은 기숙사식당(복지동) 중심으로 추천합니다.',
     };
   }
-  if (home.includes('기흥역') || home.includes('시내버스')) {
+  if (home === '기흥역행' || home === '기흥역 통학' || home.includes('기흥역')) {
     return {
-      id: 'commuter',
-      label: home.includes('기흥') ? '기흥역 통학' : '시내 통학',
+      id: 'commuter_giheung',
+      label: '기흥역행',
       dinnerFocus: false,
       shuttleFocus: true,
-      hint: '하교·저녁 전 셔틀 탑승과 동선을 함께 봐주세요.',
+      hint: '하교·저녁 전 기흥역 셔틀과 동선을 함께 봐주세요.',
+    };
+  }
+  if (home === '시내행' || home === '시내버스 통학' || home.includes('시내')) {
+    return {
+      id: 'commuter_sinae',
+      label: '시내행',
+      dinnerFocus: false,
+      shuttleFocus: true,
+      hint: '하교·저녁 전 시내 셔틀과 동선을 함께 봐주세요.',
     };
   }
   return {

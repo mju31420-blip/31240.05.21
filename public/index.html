@@ -72,7 +72,9 @@ body{display:flex;justify-content:center}
   padding:9px 0;margin-top:9px;display:flex;justify-content:space-between;align-items:center}
 .hp-name{font-size:11.5px;color:#93b8e8}
 .hp-name b{color:#fff}
-.hp-home{font-size:10px;color:#7ea8e0;background:rgba(255,255,255,.1);padding:3px 8px;border-radius:20px}
+.hp-home{font-size:10px;color:#7ea8e0;background:rgba(255,255,255,.1);padding:3px 8px;border-radius:20px;white-space:nowrap}
+.hdr-prof-side{display:flex;align-items:center;gap:10px;flex-shrink:0;margin-left:12px}
+.hdr-set-btn{background:rgba(255,255,255,.15);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:12px;cursor:pointer;font-family:'Noto Sans KR',sans-serif;white-space:nowrap}
 
 /* ── DAY BAR ── */
 .day-bar{background:#fff;padding:10px;text-align:center;border-bottom:1px solid var(--border);flex-shrink:0}
@@ -410,9 +412,9 @@ body{display:flex;justify-content:center}
       <div class="ob-sec">
         <div class="ob-stitle">🏠 거주</div>
         <div class="chips" id="homeG">
-          <div class="chip" data-v="기흥역 통학"  onclick="togChip(this,'h')">🚌 기흥역</div>
-          <div class="chip" data-v="시내버스 통학" onclick="togChip(this,'h')">🚍 시내</div>
-          <div class="chip" data-v="기숙사생"     onclick="togChip(this,'h')">🏠 기숙사</div>
+          <div class="chip" data-v="기흥역행" onclick="togChip(this,'h')">🚌 기흥역행</div>
+          <div class="chip" data-v="시내행" onclick="togChip(this,'h')">🚍 시내행</div>
+          <div class="chip" data-v="기숙사생" onclick="togChip(this,'h')">🏠 기숙사생</div>
         </div>
       </div>
       <button class="btn-ob" onclick="doneOb()">시작하기 →</button>
@@ -444,8 +446,10 @@ body{display:flex;justify-content:center}
           <div class="hp-name">안녕하세요, <b id="hpName">주인님</b></div>
           <div class="hdr-taste-chips" id="hpTasteChips"></div>
         </div>
-        <div class="hp-home" id="hpHome">거주 미설정</div>
-        <button onclick="openSettings()" style="background:rgba(255,255,255,0.15);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:12px;cursor:pointer;font-family:'Noto Sans KR',sans-serif">⚙️ 설정</button>
+        <div class="hdr-prof-side">
+          <div class="hp-home" id="hpHome">거주 미설정</div>
+          <button type="button" class="hdr-set-btn" onclick="openSettings()">⚙️ 설정</button>
+        </div>
       </div>
     </div>
   </div>
@@ -542,8 +546,6 @@ body{display:flex;justify-content:center}
     <!-- ═══ 식당 탭 ═══ -->
     <div class="pane" id="pane-food">
       <div id="foodRes">
-        <div id="foodPredBanner" class="food-pred-banner"></div>
-        <!-- ★ 점심 / 저녁 토글 ★ -->
         <div class="meal-tog">
           <button class="meal-btn on" id="mLunch" onclick="setMeal('lunch')">☀️ 점심 식단</button>
           <button class="meal-btn"    id="mDinner" onclick="setMeal('dinner')">🌙 저녁 식단</button>

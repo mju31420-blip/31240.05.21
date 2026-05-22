@@ -321,12 +321,23 @@ function formatGapDetail(snap, refDate = null) {
 }
 
 function populateBuildingSelects() {
-  const cur = document.getElementById('mCur');
-  const next = document.getElementById('mNext');
-  if (!cur || !next) return;
-  const opts = CAMPUS_BUILDINGS.map((b) => `<option value="${b.key}">${b.label}</option>`).join('');
-  cur.innerHTML = opts;
-  next.innerHTML = `<option value="none">없음 (하교)</option>${opts}`;
+  const buildings = [
+    { value: '3공', label: '제3공학관 (Y19)' },
+    { value: '1공', label: '제1공학관 (Y12)' },
+    { value: '창조관', label: '창조관 (Y25)' },
+    { value: '5공', label: '제5공학관 (Y5)' },
+    { value: '공2', label: '공학2관 (Y11)' },
+    { value: '자연', label: '자연과학관 (Y9)' },
+    { value: '명진당', label: '명진당 (Y2)' },
+    { value: '학생', label: '학생회관 (Y21)' },
+    { value: '채플관', label: '채플관 (Y22)' },
+  ];
+  const noneOpt = '<option value="none">없음 (하교)</option>';
+  const opts = buildings.map((b) => `<option value="${b.value}">${b.label}</option>`).join('');
+  const mCur = document.getElementById('mCur');
+  const mNext = document.getElementById('mNext');
+  if (mCur) mCur.innerHTML = opts;
+  if (mNext) mNext.innerHTML = noneOpt + opts;
 }
 
 window.TimetableUtil = {
