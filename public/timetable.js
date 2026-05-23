@@ -202,8 +202,17 @@ function normalizeEverytimeClassTimes(start, end) {
   if (periodCount == null) {
     const endMinPart = en % 60;
     const endHour = Math.floor(en / 60);
-    if (endMinPart === 0 || endMinPart === 50) {
-      periodCount = Math.max(1, endHour - Math.floor(normalizedStart / 60));
+    if (endMinPart === 0) {
+      const targetEnd = endHour * 60 + 50;
+      for (let count = 1; count <= 3; count++) {
+        const expected = endForSpan(startIdx, count, daytime);
+        if (expected && t2m(expected) === targetEnd) {
+          periodCount = count;
+          break;
+        }
+      }
+    } else if (endMinPart === 50) {
+      periodCount = inferPeriodCountFromEndRow(normalizedStart, en, daytime);
     } else {
       en = endHour * 60 + 50;
       periodCount = inferPeriodCountFromEndRow(normalizedStart, en, daytime);
@@ -437,7 +446,7 @@ function analyzeFromClasses(classes, refDate = null) {
     if (nowMin >= st && nowMin < en) {
       if (!inClass || classDurationMin(c) > classDurationMin(inClass)) inClass = c;
     }
-    if (en <= nowMin) lastEnded = c;
+    if (en <= nowMin && (!lastEnded || en > t2m(lastEnded.end))) lastEnded = c;
   }
 
   const cutoff = inClass ? t2m(inClass.end) : nowMin;

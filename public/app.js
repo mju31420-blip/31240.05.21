@@ -650,22 +650,21 @@ function persistOcrClasses(apiClasses) {
   const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
   const normalized = TimetableUtil.normalizeClassesFromAi(apiClasses, ref.getDay());
   if (!normalized.length) return;
-  const existing = TimetableUtil.loadUserTimetable();
-  TimetableUtil.saveUserTimetable(TimetableUtil.mergeTimetableClasses(existing, normalized));
+  TimetableUtil.replaceUserTimetable(normalized);
   updateSavedTimetableUi();
 }
 
-function refineScheduleAnalysis(api = {}, lectureDb = null) {
+function refineScheduleAnalysis(api = {}, lectureDb = null, options = {}) {
   const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
   const warnings = [...(api.warnings || [])];
   let classes = [];
   const db = lectureDb || (typeof TimetableUtil !== 'undefined' ? TimetableUtil.getLectureDbSync?.() : null);
+  const fromOcr = options.fromOcr || (Array.isArray(api.classes) && api.classes.length > 0);
 
   if (typeof TimetableUtil !== 'undefined') {
     const fromApi = TimetableUtil.normalizeClassesFromAi(api.classes || [], ref.getDay());
-    if (fromApi.length) {
-      const existing = TimetableUtil.loadUserTimetable();
-      classes = TimetableUtil.mergeTimetableClasses(existing, fromApi);
+    if (fromOcr && fromApi.length) {
+      classes = fromApi;
     } else {
       classes = TimetableUtil.loadUserTimetable();
     }
@@ -675,8 +674,8 @@ function refineScheduleAnalysis(api = {}, lectureDb = null) {
     }
     classes = TimetableUtil.dedupeOverlappingClasses(classes);
 
-    if (fromApi.length && api.classes?.length) {
-      TimetableUtil.saveUserTimetable(classes);
+    if (fromOcr && fromApi.length) {
+      TimetableUtil.replaceUserTimetable(classes);
     }
 
     const todayClasses = classes.filter((c) => c.dow === ref.getDay());
@@ -702,6 +701,11 @@ function refineScheduleAnalysis(api = {}, lectureDb = null) {
       if (todayN > 0 && maxOther >= todayN + 2) {
         warnings.push(
           `오늘(${TimetableUtil.DOW_NAMES[dIdx]}) 수업 ${todayN}개만 인식됐어요. 오후 수업 누락 가능 — 시간표 이미지를 다시 분석해 보세요.`,
+        );
+      }
+      if (fromOcr && todayN <= 2 && classes.length >= 6) {
+        warnings.push(
+          `오늘(${TimetableUtil.DOW_NAMES[dIdx]}) 수업이 ${todayN}개뿐이에요. 에브리타임에서 해당 요일 열 전체가 보이도록 캡처 후 다시 분석해 주세요.`,
         );
       }
       return {
@@ -825,7 +829,7 @@ async function applyScheduleAnalysis(rawApi, sourceLabel = '분석') {
     await TimetableUtil.loadClassPeriods();
   }
   const ocrUsed = /AI|이미지|OCR/i.test(sourceLabel);
-  const data = refineScheduleAnalysis(rawApi);
+  const data = refineScheduleAnalysis(rawApi, null, { fromOcr: ocrUsed && rawApi.classes?.length });
   if (data.scheduleMeta && ocrUsed) data.scheduleMeta.ocrUsed = true;
   let analyzeSource = 'timetable_classes';
   if (ocrUsed) analyzeSource = 'timetable_image';
