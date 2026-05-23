@@ -1,6 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BUILDING_KEYS, BUILDING_LABELS } from '../config.js';
 import { computeMealIntent } from './mealIntent.js';
+import {
+  loadLectureDb,
+  resolveCurrentLocationTxt,
+} from './lectureMatcher.js';
 
 const clientCache = new Map();
 
@@ -351,10 +355,12 @@ ${SCHEMA_HINT}`,
   const sanitized = sanitizeAiTimetableResponse(parsed);
   const refined = refineFromSanitized(sanitized, now);
   const mealIntent = computeMealIntent(refined.gapMin, now);
+  const lectureDb = loadLectureDb();
+  const curTxt = resolveCurrentLocationTxt(refined, lectureDb, BUILDING_LABELS, now.getDay());
 
   return {
     curKey: refined.curKey,
-    curTxt: refined.curTxt,
+    curTxt,
     nextKey: refined.nextKey,
     nextTxt: refined.nextTxt,
     gapMin: refined.gapMin,

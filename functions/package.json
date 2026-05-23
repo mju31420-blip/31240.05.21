@@ -7,7 +7,7 @@
     "node": "24"
   },
   "scripts": {
-    "lint": "node -e \"console.log('ok')\"",
+    "lint": "node -e \"const fs=require('fs');const p=require('path');const src=p.join('..','public','data','lecture_db.json');const dst=p.join('data','lecture_db.json');fs.mkdirSync('data',{recursive:true});if(fs.existsSync(src))fs.copyFileSync(src,dst);console.log('ok')\"",
     "serve": "firebase emulators:start --only functions",
     "shell": "firebase functions:shell"
   },

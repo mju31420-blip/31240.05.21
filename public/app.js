@@ -629,10 +629,14 @@ function updateSavedTimetableUi() {
   if (summary) {
     if (today.length) {
       const snap = TimetableUtil.analyzeNow(classes, ref);
+      const db = TimetableUtil.getLectureDbSync?.();
+      const curDisplay = TimetableUtil.resolveCurrentLocationTxt
+        ? TimetableUtil.resolveCurrentLocationTxt(snap, db, ref.getDay())
+        : snap.curTxt;
       const gapLine = TimetableUtil.formatGapDetail
         ? TimetableUtil.formatGapDetail(snap, ref)
         : `공강 ${snap.gapMin}분`;
-      summary.innerHTML = `<b>${TimetableUtil.DOW_NAMES[dow]}요일</b> ${today.length}개 · ${gapLine}<br>현재: ${snap.curTxt}<br>다음: ${snap.nextTxt}`;
+      summary.innerHTML = `<b>${TimetableUtil.DOW_NAMES[dow]}요일</b> ${today.length}개 · ${gapLine}<br>현재: ${curDisplay}<br>다음: ${snap.nextTxt}`;
     } else if (!classes.length) {
       summary.textContent = '저장된 시간표가 없습니다.';
     } else {
@@ -650,20 +654,26 @@ function persistOcrClasses(apiClasses) {
   updateSavedTimetableUi();
 }
 
-function refineScheduleAnalysis(api = {}) {
+function refineScheduleAnalysis(api = {}, lectureDb = null) {
   const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
   const warnings = [...(api.warnings || [])];
   let classes = [];
+  const db = lectureDb || (typeof TimetableUtil !== 'undefined' ? TimetableUtil.getLectureDbSync?.() : null);
 
   if (typeof TimetableUtil !== 'undefined') {
     const fromApi = TimetableUtil.normalizeClassesFromAi(api.classes || [], ref.getDay());
     if (fromApi.length) {
       classes = fromApi;
-      if (api.classes?.length) {
-        TimetableUtil.saveUserTimetable(classes);
-      }
     } else {
       classes = TimetableUtil.loadUserTimetable();
+    }
+
+    if (db?.lectures?.length) {
+      classes = TimetableUtil.enrichClassesWithLectureDb(classes, db, ref.getDay());
+    }
+
+    if (fromApi.length && api.classes?.length) {
+      TimetableUtil.saveUserTimetable(classes);
     }
 
     const todayClasses = classes.filter((c) => c.dow === ref.getDay());
@@ -676,9 +686,12 @@ function refineScheduleAnalysis(api = {}) {
       const gapDetail = TimetableUtil.formatGapDetail
         ? TimetableUtil.formatGapDetail(computed, ref)
         : `공강 ${computed.gapMin}분`;
+      const curTxt = TimetableUtil.resolveCurrentLocationTxt
+        ? TimetableUtil.resolveCurrentLocationTxt(computed, db, ref.getDay())
+        : computed.curTxt;
       return {
         curKey: computed.curKey,
-        curTxt: computed.curTxt,
+        curTxt,
         nextKey: computed.nextKey,
         nextTxt: computed.nextTxt,
         gapMin: computed.gapMin,
@@ -788,6 +801,9 @@ function fillManualFromTimetable() {
 
 async function applyScheduleAnalysis(rawApi, sourceLabel = '분석') {
   await ensureMenus();
+  if (typeof TimetableUtil !== 'undefined' && TimetableUtil.loadLectureDb) {
+    await TimetableUtil.loadLectureDb();
+  }
   const ocrUsed = /AI|이미지|OCR/i.test(sourceLabel);
   const data = refineScheduleAnalysis(rawApi);
   if (data.scheduleMeta && ocrUsed) data.scheduleMeta.ocrUsed = true;
@@ -2862,7 +2878,10 @@ async function bootApp() {
   if (typeof TimetableUtil !== 'undefined' && TimetableUtil.populateBuildingSelects) {
     TimetableUtil.populateBuildingSelects();
   }
-  if (typeof TimetableUtil !== 'undefined') TimetableUtil.loadUserTimetable();
+  if (typeof TimetableUtil !== 'undefined') {
+    TimetableUtil.loadUserTimetable();
+    if (TimetableUtil.loadLectureDb) void TimetableUtil.loadLectureDb().then(() => updateSavedTimetableUi());
+  }
   updateSavedTimetableUi();
   updateFoodRankLabel();
   drawShuttle();

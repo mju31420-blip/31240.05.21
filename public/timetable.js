@@ -327,6 +327,127 @@ function formatWeeklyDowLine(classes) {
   return parts.length ? parts.join(' · ') : '';
 }
 
+/* ── 공식 강의시간표 DB 매칭 (lecture_db.json) ── */
+let _lectureDbCache = null;
+let _lectureDbPromise = null;
+
+function normLectureTime(t) {
+  if (!t) return null;
+  const m = String(t).match(/(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return `${String(parseInt(m[1], 10)).padStart(2, '0')}:${m[2]}`;
+}
+
+function normLectureRoom(r) {
+  if (!r) return '';
+  return String(r).toUpperCase().replace(/[\s-]/g, '');
+}
+
+function normalizeLectureDbEntry(raw, refDow = 1) {
+  const room = raw.강의실 || raw.room || '';
+  const buildingRaw = raw.건물 || raw.building || '';
+  const buildingKey =
+    resolveBuildingKey(buildingRaw) ||
+    resolveRoomToBuildingKey(room, null) ||
+    resolveBuildingKey(raw.buildingKey);
+  return {
+    name: (raw.교과목명 || raw.name || raw.subject || '').trim(),
+    room,
+    buildingKey,
+    dow: normalizeDow(raw.요일 ?? raw.dow, refDow),
+    start: normLectureTime(raw.시작시간 || raw.start || raw.startTime),
+    end: normLectureTime(raw.종료시간 || raw.end || raw.endTime),
+  };
+}
+
+function getLectureDbList(db) {
+  if (!db) return [];
+  if (Array.isArray(db.lectures)) return db.lectures;
+  if (Array.isArray(db)) return db;
+  return [];
+}
+
+function findLectureNameForClass(cls, db, refDow = 1) {
+  const list = getLectureDbList(db);
+  if (!cls || !list.length) return null;
+
+  const clsStart = normLectureTime(cls.start);
+  const clsEnd = normLectureTime(cls.end);
+  if (!clsStart || !clsEnd || cls.dow == null) return null;
+
+  const entries = list
+    .map((e) => normalizeLectureDbEntry(e, refDow))
+    .filter((e) => e.name && e.start && e.end && e.buildingKey);
+
+  let candidates = entries.filter(
+    (e) =>
+      e.dow === cls.dow &&
+      e.start === clsStart &&
+      e.end === clsEnd &&
+      e.buildingKey === cls.buildingKey,
+  );
+
+  if (!candidates.length) {
+    candidates = entries.filter(
+      (e) => e.dow === cls.dow && e.start === clsStart && e.buildingKey === cls.buildingKey,
+    );
+  }
+
+  if (!candidates.length) return null;
+  if (candidates.length === 1) return candidates[0].name;
+
+  const clsRoom = normLectureRoom(cls.room);
+  if (clsRoom) {
+    const roomHit = candidates.find((e) => {
+      const er = normLectureRoom(e.room);
+      return er && (er.includes(clsRoom) || clsRoom.includes(er));
+    });
+    if (roomHit) return roomHit.name;
+  }
+
+  return candidates[0].name;
+}
+
+/** 매칭 성공 시에만 name 갱신 (기존 class 필드 구조 유지) */
+function enrichClassesWithLectureDb(classes, db, refDow = 1) {
+  if (!db || !classes?.length) return classes;
+  return classes.map((cls) => {
+    const matched = findLectureNameForClass(cls, db, refDow);
+    return matched ? { ...cls, name: matched } : cls;
+  });
+}
+
+/** "제3공학관 (자료구조)" — 매칭 없으면 건물명만 */
+function resolveCurrentLocationTxt(snapshot, db, refDow = 1) {
+  const label = BUILDING_LABELS[snapshot.curKey] || snapshot.curKey || '';
+  const anchor = snapshot.inClass || snapshot.lastEnded;
+  if (!anchor || !label) return label;
+  const courseName = findLectureNameForClass(anchor, db, refDow);
+  return courseName ? `${label} (${courseName})` : label;
+}
+
+function loadLectureDb() {
+  if (_lectureDbCache) return Promise.resolve(_lectureDbCache);
+  if (!_lectureDbPromise) {
+    _lectureDbPromise = fetch('/data/lecture_db.json')
+      .then((res) => (res.ok ? res.json() : { lectures: [] }))
+      .then((data) => {
+        _lectureDbCache = data && typeof data === 'object' ? data : { lectures: [] };
+        return _lectureDbCache;
+      })
+      .catch((e) => {
+        console.warn('[lecture_db]', e);
+        _lectureDbCache = { lectures: [] };
+        return _lectureDbCache;
+      });
+  }
+  return _lectureDbPromise;
+}
+
+function getLectureDbSync() {
+  return _lectureDbCache;
+}
+
 function formatGapDetail(snap, refDate = null) {
   refDate = refDate || (typeof KST !== 'undefined' ? KST.now() : new Date());
   const dowLabel = DOW_NAMES[refDate.getDay()];
@@ -394,6 +515,12 @@ window.TimetableUtil = {
   resolveRoomToBuildingKey,
   resolveBuildingKey,
   analyzeFromClasses,
+
+  loadLectureDb,
+  getLectureDbSync,
+  findLectureNameForClass,
+  enrichClassesWithLectureDb,
+  resolveCurrentLocationTxt,
 
   analyzeNow(classes = null, refDate = null) {
     const list = classes || loadUserTimetable();
