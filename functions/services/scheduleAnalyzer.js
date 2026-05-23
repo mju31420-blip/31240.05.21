@@ -197,7 +197,6 @@ function analyzeFromClasses(classes, refDate) {
 
   let inClass = null;
   let lastEnded = null;
-  let nextClass = null;
 
   for (const c of today) {
     const st = timeToMin(c.start);
@@ -205,7 +204,15 @@ function analyzeFromClasses(classes, refDate) {
     if (st == null || en == null) continue;
     if (nowMin >= st && nowMin < en) inClass = c;
     if (en <= nowMin) lastEnded = c;
-    if (st > nowMin && !nextClass) nextClass = c;
+  }
+
+  const cutoff = inClass ? timeToMin(inClass.end) : nowMin;
+  let nextClass = null;
+  for (const c of today) {
+    if (c === inClass) continue;
+    const st = timeToMin(c.start);
+    if (st == null) continue;
+    if (st >= cutoff && !nextClass) nextClass = c;
   }
 
   const anchor = inClass || lastEnded;
@@ -230,7 +237,9 @@ function analyzeFromClasses(classes, refDate) {
   const nextKey = nextClass?.buildingKey || null;
   const nextTxt = nextClass
     ? `${nextClass.name} (${nextClass.room || BUILDING_LABELS[nextKey]}) ${nextClass.start}~${nextClass.end}`
-    : '없음 (하교)';
+    : inClass
+      ? `없음 (${inClass.end} 종료 후 하교)`
+      : '없음 (하교)';
 
   return { curKey, curTxt, nextKey, nextTxt, gapMin, inClass, lastEnded, nextClass, today };
 }
@@ -290,7 +299,8 @@ ${formatPeriodTableForPrompt(loadClassPeriods())}
    - 종료(end)는 반드시 :50. :00으로 끝나는 end는 절대 반환하지 마.
 2) 블록 시작 행 = start, 블록 끝 행 시간 + 50분 = end (높이 추정 금지).
    - 6교시 1개: 14:00~14:50 / 6+7교시: 14:00~15:50 / 6+7+8교시: 14:00~16:50
-3) 같은 요일·다른 과목 블록은 classes에 각각 분리.`;
+3) 같은 요일·다른 과목 블록은 classes에 각각 분리.
+4) **모든 요일·오전·오후(09:00~17:50) 수업 블록을 빠짐없이** 읽을 것. 15:00·16:00·17:00 시작 수업도 포함.`;
 }
 
 const ROOM_GUIDE = `호실→buildingKey: Y1→1공, Y19→3공, Y5→5공, Y3→명진당, Y9/Y11→공2, Y7/Y25→자연, Y21/Y22→학생, 채플→채플, 창조→창조.

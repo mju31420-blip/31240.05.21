@@ -353,7 +353,6 @@ function analyzeFromClasses(classes, refDate = null) {
 
   let inClass = null;
   let lastEnded = null;
-  let nextClass = null;
 
   for (const c of today) {
     const st = t2m(c.start);
@@ -361,11 +360,19 @@ function analyzeFromClasses(classes, refDate = null) {
     if (st == null || en == null) continue;
     if (nowMin >= st && nowMin < en) inClass = c;
     if (en <= nowMin) lastEnded = c;
-    if (st > nowMin && !nextClass) nextClass = c;
+  }
+
+  const cutoff = inClass ? t2m(inClass.end) : nowMin;
+  let nextClass = null;
+  for (const c of today) {
+    if (c === inClass) continue;
+    const st = t2m(c.start);
+    if (st == null) continue;
+    if (st >= cutoff && !nextClass) nextClass = c;
   }
 
   const anchor = inClass || lastEnded;
-  const curKey = anchor?.buildingKey || today[0]?.buildingKey || '3공';
+  const curKey = anchorKey(anchor, today);
 
   let gapFrom = nowMin;
   if (inClass) gapFrom = t2m(inClass.end);
@@ -396,11 +403,7 @@ function analyzeFromClasses(classes, refDate = null) {
             : '주말 (무수업)'
           : '캠퍼스';
 
-  const nextTxt = nextClass
-    ? `${nextClass.name} (${nextClass.room || BUILDING_LABELS[nextClass.buildingKey]}) ${nextClass.start}~${nextClass.end}`
-    : noSchool || !today.length
-      ? '없음 (하교·자유)'
-      : '없음 (하교)';
+  const nextTxt = formatNextClassTxt({ nextClass, inClass, noSchool, today });
 
   const mealIntent =
     typeof MealEngine !== 'undefined' ? MealEngine.computeMealIntent(gapMin, refDate) : { period: 'lunch' };
@@ -420,6 +423,25 @@ function analyzeFromClasses(classes, refDate = null) {
     timeline: buildTodayTimeline(today, nowMin),
     gapSource: 'classes',
   };
+}
+
+function anchorKey(anchor, today) {
+  return anchor?.buildingKey || today[0]?.buildingKey || '3공';
+}
+
+function formatNextClassTxt(snap) {
+  if (snap.nextClass) {
+    const nc = snap.nextClass;
+    const bk = nc.buildingKey;
+    return `${nc.name} (${nc.room || BUILDING_LABELS[bk] || bk}) ${nc.start}~${nc.end}`;
+  }
+  if (snap.inClass) {
+    return `없음 (${snap.inClass.end} 종료 후 하교)`;
+  }
+  if (snap.noSchool || !snap.today?.length) {
+    return '없음 (하교·자유)';
+  }
+  return '없음 (하교)';
 }
 
 function buildTodayTimeline(today, nowMin) {
@@ -586,8 +608,10 @@ function formatGapDetail(snap, refDate = null) {
 
   if (snap.inClass) {
     const en = snap.inClass.end;
-    const nx = snap.nextClass ? ` → 다음 ${snap.nextClass.start} (${snap.gapMin}분 공강)` : ` → 하교 (${snap.gapMin}분)`;
-    return `${dowLabel}요일 · ${snap.inClass.start}~${en} 수업 중${nx}`;
+    if (snap.nextClass) {
+      return `${dowLabel}요일 · ${snap.inClass.start}~${en} 수업 중 → ${en} 이후 ${snap.nextClass.start}까지 ${snap.gapMin}분 공강`;
+    }
+    return `${dowLabel}요일 · ${snap.inClass.start}~${en} 수업 중 → ${en} 종료 후 하교 (${snap.gapMin}분 여유)`;
   }
   if (snap.nextClass) {
     const from = snap.lastEnded ? snap.lastEnded.end : '지금';
@@ -648,6 +672,8 @@ window.TimetableUtil = {
   findLectureNameForClass,
   enrichClassesWithLectureDb,
   resolveCurrentLocationTxt,
+
+  formatNextClassTxt,
 
   analyzeNow(classes = null, refDate = null) {
     const list = classes || loadUserTimetable();

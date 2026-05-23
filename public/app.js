@@ -650,7 +650,8 @@ function persistOcrClasses(apiClasses) {
   const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
   const normalized = TimetableUtil.normalizeClassesFromAi(apiClasses, ref.getDay());
   if (!normalized.length) return;
-  TimetableUtil.saveUserTimetable(normalized);
+  const existing = TimetableUtil.loadUserTimetable();
+  TimetableUtil.saveUserTimetable(TimetableUtil.mergeTimetableClasses(existing, normalized));
   updateSavedTimetableUi();
 }
 
@@ -663,7 +664,8 @@ function refineScheduleAnalysis(api = {}, lectureDb = null) {
   if (typeof TimetableUtil !== 'undefined') {
     const fromApi = TimetableUtil.normalizeClassesFromAi(api.classes || [], ref.getDay());
     if (fromApi.length) {
-      classes = fromApi;
+      const existing = TimetableUtil.loadUserTimetable();
+      classes = TimetableUtil.mergeTimetableClasses(existing, fromApi);
     } else {
       classes = TimetableUtil.loadUserTimetable();
     }
@@ -689,6 +691,18 @@ function refineScheduleAnalysis(api = {}, lectureDb = null) {
       const curTxt = TimetableUtil.resolveCurrentLocationTxt
         ? TimetableUtil.resolveCurrentLocationTxt(computed, db, ref.getDay())
         : computed.curTxt;
+      const dowCounts = TimetableUtil.summarizeByDow(classes);
+      const dIdx = ref.getDay();
+      const todayN = computed.today?.length ?? 0;
+      let maxOther = 0;
+      for (let i = 1; i <= 5; i++) {
+        if (i !== dIdx) maxOther = Math.max(maxOther, dowCounts[i] || 0);
+      }
+      if (todayN > 0 && maxOther >= todayN + 2) {
+        warnings.push(
+          `오늘(${TimetableUtil.DOW_NAMES[dIdx]}) 수업 ${todayN}개만 인식됐어요. 오후 수업 누락 가능 — 시간표 이미지를 다시 분석해 보세요.`,
+        );
+      }
       return {
         curKey: computed.curKey,
         curTxt,
@@ -700,6 +714,8 @@ function refineScheduleAnalysis(api = {}, lectureDb = null) {
           timeline: computed.timeline,
           gapSource: api.gapSource === 'saved_timetable' ? 'saved_timetable' : 'timetable_classes',
           gapDetail,
+          inClass: computed.inClass,
+          nextClass: computed.nextClass,
           dow: ref.getDay(),
           dowLabel: TimetableUtil.DOW_NAMES[ref.getDay()],
           todayCount: computed.today?.length ?? todayClasses.length,
@@ -1643,11 +1659,12 @@ function resolveAnalyzeComment(d) {
 function drawBoard() {
   const d = lastData;
   const meta = d.scheduleMeta || {};
+  const gapLabel = meta.inClass ? '수업 · 이후' : '공강 시간';
   document.getElementById('sbRows').innerHTML = [
     ['분석 요일', meta.dowLabel ? `${meta.dowLabel}요일` : '-'],
     ['현재 위치', d.현재위치 || '-'],
     ['다음 수업', d.다음수업 || '-'],
-    ['공강 시간', meta.gapDetail || d.공강텍스트 || '-'],
+    [gapLabel, meta.gapDetail || d.공강텍스트 || '-'],
     ['분석 시각', d.analyzedAt || 'KST'],
   ]
     .map(([k, v]) => `<div class="dr"><span class="dk">${k}</span><span class="dv">${v}</span></div>`)
