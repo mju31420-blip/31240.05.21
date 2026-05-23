@@ -673,6 +673,7 @@ function refineScheduleAnalysis(api = {}, lectureDb = null) {
     if (db?.lectures?.length) {
       classes = TimetableUtil.enrichClassesWithLectureDb(classes, db, ref.getDay());
     }
+    classes = TimetableUtil.dedupeOverlappingClasses(classes);
 
     if (fromApi.length && api.classes?.length) {
       TimetableUtil.saveUserTimetable(classes);

@@ -252,8 +252,8 @@ function loadUserTimetable() {
           purgeLegacyDevSampleFromStorage();
           return window.USER_TIMETABLE;
         }
-        window.USER_TIMETABLE = parsed;
-        return parsed;
+        window.USER_TIMETABLE = dedupeOverlappingClasses(parsed);
+        return window.USER_TIMETABLE;
       }
     }
   } catch (e) {
@@ -265,7 +265,7 @@ function loadUserTimetable() {
 
 function saveUserTimetable(classes) {
   if (!Array.isArray(classes)) return;
-  window.USER_TIMETABLE = classes;
+  window.USER_TIMETABLE = dedupeOverlappingClasses(classes);
   try {
     localStorage.removeItem('myeong_timetable');
     if (classes.length) {
@@ -292,13 +292,87 @@ async function syncTimetableSession(classes) {
 }
 
 function mergeTimetableClasses(existing, incoming) {
-  const map = new Map();
-  [...existing, ...incoming].forEach((c) => {
-    if (!c?.start || c.dow == null) return;
-    const key = `${c.dow}|${c.start}|${c.end}|${c.name || ''}|${c.room || ''}`;
-    map.set(key, c);
+  if (!incoming?.length) return dedupeOverlappingClasses(existing || []);
+  const incomingDows = new Set(incoming.map((c) => c.dow));
+  const kept = (existing || []).filter((c) => !incomingDows.has(c.dow));
+  return dedupeOverlappingClasses([...kept, ...incoming]);
+}
+
+function classDurationMin(c) {
+  const st = t2m(c?.start);
+  const en = t2m(c?.end);
+  if (st == null || en == null) return 0;
+  return en - st;
+}
+
+function classScore(c) {
+  let score = classDurationMin(c) * 100;
+  if (c?.room) score += 10;
+  if (c?.name && c.name !== '수업') score += 1;
+  return score;
+}
+
+function sameStart(a, b) {
+  return a.dow === b.dow && t2m(a.start) === t2m(b.start);
+}
+
+function pickBetterClass(a, b) {
+  return classScore(a) >= classScore(b) ? a : b;
+}
+
+function spansContain(outer, inner) {
+  const os = t2m(outer.start);
+  const oe = t2m(outer.end);
+  const is = t2m(inner.start);
+  const ie = t2m(inner.end);
+  if (os == null || oe == null || is == null || ie == null) return false;
+  return os <= is && oe >= ie;
+}
+
+/** 같은 요일·겹치는 시간·동일 시작 중복 제거 (긴 교시·호실 있는 쪽 우선) */
+function dedupeOverlappingClasses(classes) {
+  if (!Array.isArray(classes) || !classes.length) return [];
+  const byDow = new Map();
+  classes.forEach((c) => {
+    if (c?.start == null || c.dow == null) return;
+    if (!byDow.has(c.dow)) byDow.set(c.dow, []);
+    byDow.get(c.dow).push(c);
   });
-  return [...map.values()].sort((a, b) => a.dow - b.dow || t2m(a.start) - t2m(b.start));
+
+  const out = [];
+  byDow.forEach((dayClasses) => {
+    const sorted = [...dayClasses].sort(
+      (a, b) => t2m(a.start) - t2m(b.start) || t2m(b.end) - t2m(a.end),
+    );
+    const kept = [];
+
+    for (const c of sorted) {
+      let merged = false;
+      for (let i = 0; i < kept.length; i++) {
+        const k = kept[i];
+        if (sameStart(k, c)) {
+          kept[i] = pickBetterClass(k, c);
+          merged = true;
+          break;
+        }
+        if (spansContain(c, k)) {
+          kept[i] = pickBetterClass(k, c);
+          merged = true;
+          break;
+        }
+        if (spansContain(k, c)) {
+          merged = true;
+          break;
+        }
+      }
+      if (!merged) kept.push(c);
+    }
+
+    kept.sort((a, b) => t2m(a.start) - t2m(b.start));
+    out.push(...kept);
+  });
+
+  return out.sort((a, b) => a.dow - b.dow || t2m(a.start) - t2m(b.start));
 }
 
 function normalizeClass(raw) {
@@ -331,7 +405,7 @@ function normalizeClass(raw) {
 
 function normalizeClassesFromAi(list, refDow) {
   if (!Array.isArray(list)) return [];
-  return list
+  const normalized = list
     .map((raw) => {
       const c = normalizeClass(raw);
       if (!c) return null;
@@ -339,10 +413,12 @@ function normalizeClassesFromAi(list, refDow) {
       return c;
     })
     .filter(Boolean);
+  return dedupeOverlappingClasses(normalized);
 }
 
 function analyzeFromClasses(classes, refDate = null) {
   refDate = refDate || (typeof KST !== 'undefined' ? KST.now() : new Date());
+  classes = dedupeOverlappingClasses(classes || []);
   const dow = refDate.getDay();
   const noSchool =
     typeof SchoolCalendar !== 'undefined' && SchoolCalendar.isNoSchoolDay
@@ -358,7 +434,9 @@ function analyzeFromClasses(classes, refDate = null) {
     const st = t2m(c.start);
     const en = t2m(c.end);
     if (st == null || en == null) continue;
-    if (nowMin >= st && nowMin < en) inClass = c;
+    if (nowMin >= st && nowMin < en) {
+      if (!inClass || classDurationMin(c) > classDurationMin(inClass)) inClass = c;
+    }
     if (en <= nowMin) lastEnded = c;
   }
 
@@ -534,13 +612,15 @@ function findLectureNameForClass(cls, db, refDow = 1) {
       e.buildingKey === cls.buildingKey,
   );
 
-  if (!candidates.length) {
-    candidates = entries.filter(
-      (e) => e.dow === cls.dow && e.start === clsStart && e.buildingKey === cls.buildingKey,
-    );
-  }
-
   if (!candidates.length) return null;
+
+  const clsDur = t2m(cls.end) - t2m(cls.start);
+  candidates = candidates.filter((e) => {
+    const eDur = t2m(e.end) - t2m(e.start);
+    return e.end === clsEnd || eDur === clsDur;
+  });
+  if (!candidates.length) return null;
+
   if (candidates.length === 1) return candidates[0].name;
 
   const clsRoom = normLectureRoom(cls.room);
@@ -659,6 +739,7 @@ window.TimetableUtil = {
   saveUserTimetable,
   replaceUserTimetable,
   mergeTimetableClasses,
+  dedupeOverlappingClasses,
   normalizeClass,
   normalizeClassesFromAi,
   resolveRoomToBuildingKey,

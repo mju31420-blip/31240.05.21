@@ -202,7 +202,11 @@ function analyzeFromClasses(classes, refDate) {
     const st = timeToMin(c.start);
     const en = timeToMin(c.end);
     if (st == null || en == null) continue;
-    if (nowMin >= st && nowMin < en) inClass = c;
+    if (nowMin >= st && nowMin < en) {
+      const dur = en - st;
+      const curDur = inClass ? timeToMin(inClass.end) - timeToMin(inClass.start) : 0;
+      if (!inClass || dur > curDur) inClass = c;
+    }
     if (en <= nowMin) lastEnded = c;
   }
 
