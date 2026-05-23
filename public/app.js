@@ -1794,15 +1794,19 @@ function drawBoard() {
   const d = lastData;
   const meta = d.scheduleMeta || {};
   const gapLabel = meta.inClass ? '수업 · 이후' : '공강 시간';
+  const gapText = meta.gapDetail || d.공강텍스트 || '-';
+  const sbRow = (k, v, wrap = false) => {
+    const rowCls = wrap ? 'dr dr--gap' : 'dr';
+    const valCls = wrap ? 'dv dv--wrap' : 'dv';
+    return `<div class="${rowCls}"><span class="dk">${k}</span><span class="${valCls}">${v}</span></div>`;
+  };
   document.getElementById('sbRows').innerHTML = [
-    ['분석 요일', meta.dowLabel ? `${meta.dowLabel}요일` : '-'],
-    ['현재 위치', d.현재위치 || '-'],
-    ['다음 수업', d.다음수업 || '-'],
-    [gapLabel, meta.gapDetail || d.공강텍스트 || '-'],
-    ['분석 시각', d.analyzedAt || 'KST'],
-  ]
-    .map(([k, v]) => `<div class="dr"><span class="dk">${k}</span><span class="dv">${v}</span></div>`)
-    .join('');
+    sbRow('분석 요일', meta.dowLabel ? `${meta.dowLabel}요일` : '-'),
+    sbRow('현재 위치', d.현재위치 || '-'),
+    sbRow('다음 수업', d.다음수업 || '-'),
+    sbRow(gapLabel, gapText, true),
+    sbRow('분석 시각', d.analyzedAt || 'KST'),
+  ].join('');
 
   const tlEl = document.getElementById('ttTimeline');
   if (tlEl) {

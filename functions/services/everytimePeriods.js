@@ -151,5 +151,17 @@ export function normalizeEverytimeClassTimes(start, end, config = loadClassPerio
   const duration = timeToMin(endStr) - normalizedStart;
   if (!durations.includes(duration)) return null;
 
-  return { start: minToTime(normalizedStart), end: endStr, periodCount };
+  return fixCommonMisreadStart({ start: minToTime(normalizedStart), end: endStr }, daytime);
+}
+
+function fixCommonMisreadStart(times, daytime) {
+  const st = timeToMin(times.start);
+  const en = timeToMin(times.end);
+  if (st == null || en == null) return times;
+  const dur = en - st;
+  if (st === timeToMin('09:00') && findStartPeriodIndex(timeToMin('10:00'), daytime) >= 0) {
+    if (dur === 110) return { start: '10:00', end: '11:50' };
+    if (dur === 170 && times.end === '11:50') return { start: '10:00', end: '11:50' };
+  }
+  return times;
 }

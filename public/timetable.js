@@ -227,7 +227,20 @@ function normalizeEverytimeClassTimes(start, end) {
   const duration = t2m(endStr) - normalizedStart;
   if (!durations.includes(duration)) return null;
 
-  return { start: m2t(normalizedStart), end: endStr };
+  return fixCommonMisreadStart({ start: m2t(normalizedStart), end: endStr }, daytime);
+}
+
+/** 2교시(110분) 블록이 09:00에 시작하면 10:00 행 오독으로 보고 10:00~11:50으로 보정 */
+function fixCommonMisreadStart(times, daytime) {
+  const st = t2m(times.start);
+  const en = t2m(times.end);
+  if (st == null || en == null) return times;
+  const dur = en - st;
+  if (st === t2m('09:00') && findStartPeriodIndex(t2m('10:00'), daytime) >= 0) {
+    if (dur === 110) return { start: '10:00', end: '11:50' };
+    if (dur === 170 && times.end === '11:50') return { start: '10:00', end: '11:50' };
+  }
+  return times;
 }
 
 function resolveRoomToBuildingKey(room, fallbackKey) {
@@ -329,6 +342,23 @@ function pickBetterClass(a, b) {
   return classScore(a) >= classScore(b) ? a : b;
 }
 
+function sameSubject(a, b) {
+  const na = (a?.name || '').trim();
+  const nb = (b?.name || '').trim();
+  if (!na || !nb || na === '수업' || nb === '수업') return false;
+  return na === nb;
+}
+
+/** inner 시작 직전 교시 :50까지로 outer 종료 잘라냄 (인접 다른 과목 블록) */
+function trimClassBeforeStart(outer, inner, daytime) {
+  const innerStart = t2m(inner.start);
+  const idx = findStartPeriodIndex(innerStart, daytime);
+  if (idx <= 0) return null;
+  const newEnd = daytime[idx - 1].end;
+  if (t2m(newEnd) <= t2m(outer.start)) return null;
+  return { ...outer, end: newEnd };
+}
+
 function spansContain(outer, inner) {
   const os = t2m(outer.start);
   const oe = t2m(outer.end);
@@ -338,18 +368,28 @@ function spansContain(outer, inner) {
   return os <= is && oe >= ie;
 }
 
+function correctClassTimes(c) {
+  if (!c?.start || !c?.end) return c;
+  const daytime = getDaytimePeriods();
+  const fixed = fixCommonMisreadStart({ start: c.start, end: c.end }, daytime);
+  if (fixed.start === c.start && fixed.end === c.end) return c;
+  return { ...c, start: fixed.start, end: fixed.end };
+}
+
 /** 같은 요일·겹치는 시간·동일 시작 중복 제거 (긴 교시·호실 있는 쪽 우선) */
 function dedupeOverlappingClasses(classes) {
   if (!Array.isArray(classes) || !classes.length) return [];
   const byDow = new Map();
   classes.forEach((c) => {
     if (c?.start == null || c.dow == null) return;
-    if (!byDow.has(c.dow)) byDow.set(c.dow, []);
-    byDow.get(c.dow).push(c);
+    const corrected = correctClassTimes(c);
+    if (!byDow.has(corrected.dow)) byDow.set(corrected.dow, []);
+    byDow.get(corrected.dow).push(corrected);
   });
 
   const out = [];
   byDow.forEach((dayClasses) => {
+    const daytime = getDaytimePeriods();
     const sorted = [...dayClasses].sort(
       (a, b) => t2m(a.start) - t2m(b.start) || t2m(b.end) - t2m(a.end),
     );
@@ -364,13 +404,29 @@ function dedupeOverlappingClasses(classes) {
           merged = true;
           break;
         }
-        if (spansContain(c, k)) {
-          kept[i] = pickBetterClass(k, c);
-          merged = true;
+        if (spansContain(k, c)) {
+          if (!sameSubject(k, c)) {
+            const trimmed = trimClassBeforeStart(k, c, daytime);
+            if (trimmed) kept[i] = trimmed;
+          } else {
+            kept[i] = pickBetterClass(k, c);
+            merged = true;
+          }
           break;
         }
-        if (spansContain(k, c)) {
-          merged = true;
+        if (spansContain(c, k)) {
+          if (!sameSubject(c, k)) {
+            const trimmed = trimClassBeforeStart(c, k, daytime);
+            if (trimmed) {
+              kept.push(trimmed);
+              merged = true;
+            } else {
+              merged = true;
+            }
+          } else {
+            kept[i] = pickBetterClass(k, c);
+            merged = true;
+          }
           break;
         }
       }
@@ -686,31 +742,30 @@ function getLectureDbSync() {
 
 function formatGapDetail(snap, refDate = null) {
   refDate = refDate || (typeof KST !== 'undefined' ? KST.now() : new Date());
-  const dowLabel = DOW_NAMES[refDate.getDay()];
   const today = snap.today || [];
   if (snap.noSchool) {
     return typeof SchoolCalendar !== 'undefined' && SchoolCalendar.isHoliday(refDate)
-      ? `${dowLabel}요일 · 공휴일 (학교 휴무)`
-      : `${dowLabel}요일 · 주말 (학교 휴무)`;
+      ? '공휴일 (학교 휴무)'
+      : '주말 (학교 휴무)';
   }
-  if (!today.length) return `${dowLabel}요일 수업 없음`;
+  if (!today.length) return '수업 없음';
 
   if (snap.inClass) {
     const en = snap.inClass.end;
     if (snap.nextClass) {
-      return `${dowLabel}요일 · ${snap.inClass.start}~${en} 수업 중 → ${en} 이후 ${snap.nextClass.start}까지 ${snap.gapMin}분 공강`;
+      return `${snap.inClass.start}~${en} 수업 중 → ${en} 이후 ${snap.nextClass.start}까지 ${snap.gapMin}분 공강`;
     }
-    return `${dowLabel}요일 · ${snap.inClass.start}~${en} 수업 중 → ${en} 종료 후 하교 (${snap.gapMin}분 여유)`;
+    return `${snap.inClass.start}~${en} 수업 중 → ${en} 종료 후 하교`;
   }
   if (snap.nextClass) {
     const from = snap.lastEnded ? snap.lastEnded.end : '지금';
-    return `${dowLabel}요일 · ${from}~${snap.nextClass.start} 공강 ${snap.gapMin}분 (다음: ${snap.nextClass.name})`;
+    return `${from}~${snap.nextClass.start} 공강 ${snap.gapMin}분 · 다음 ${snap.nextClass.name}`;
   }
   if (snap.lastEnded) {
-    return `${dowLabel}요일 · ${snap.lastEnded.name} 종료(${snap.lastEnded.end}) 후 하교·자유 ${snap.gapMin}분`;
+    return `${snap.lastEnded.name} 종료(${snap.lastEnded.end}) 후 하교·자유 ${snap.gapMin}분`;
   }
   const first = today[0];
-  return `${dowLabel}요일 · 첫 수업 ${first.start} 전 ${snap.gapMin}분`;
+  return `첫 수업 ${first.start} 전 ${snap.gapMin}분`;
 }
 
 function populateBuildingSelects() {
