@@ -98,6 +98,129 @@ function t2m(t) {
   return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
 }
 
+function m2t(min) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** 명지대 2026-1 주간 교시 (class_periods.json과 동기) */
+const DEFAULT_DAYTIME_PERIODS = [
+  { period: 1, start: '09:00', end: '09:50' },
+  { period: 2, start: '10:00', end: '10:50' },
+  { period: 3, start: '11:00', end: '11:50' },
+  { period: 4, start: '12:00', end: '12:50' },
+  { period: 5, start: '13:00', end: '13:50' },
+  { period: 6, start: '14:00', end: '14:50' },
+  { period: 7, start: '15:00', end: '15:50' },
+  { period: 8, start: '16:00', end: '16:50' },
+  { period: 9, start: '17:00', end: '17:50' },
+];
+
+const VALID_PERIOD_DURATIONS = [50, 110, 170];
+
+let _classPeriodsCache = null;
+let _classPeriodsPromise = null;
+
+function getDaytimePeriods() {
+  return _classPeriodsCache?.daytime?.length ? _classPeriodsCache.daytime : DEFAULT_DAYTIME_PERIODS;
+}
+
+function loadClassPeriods() {
+  if (_classPeriodsCache) return Promise.resolve(_classPeriodsCache);
+  if (!_classPeriodsPromise) {
+    _classPeriodsPromise = fetch('/data/class_periods.json')
+      .then((res) => (res.ok ? res.json() : { daytime: DEFAULT_DAYTIME_PERIODS }))
+      .then((data) => {
+        _classPeriodsCache = data && typeof data === 'object' ? data : { daytime: DEFAULT_DAYTIME_PERIODS };
+        return _classPeriodsCache;
+      })
+      .catch(() => {
+        _classPeriodsCache = { daytime: DEFAULT_DAYTIME_PERIODS };
+        return _classPeriodsCache;
+      });
+  }
+  return _classPeriodsPromise;
+}
+
+function findStartPeriodIndex(timeMin, daytime) {
+  for (let i = 0; i < daytime.length; i++) {
+    if (t2m(daytime[i].start) === timeMin) return i;
+  }
+  return -1;
+}
+
+function endForSpan(startIdx, periodCount, daytime) {
+  const endIdx = startIdx + periodCount - 1;
+  if (endIdx < 0 || endIdx >= daytime.length) return null;
+  return daytime[endIdx].end;
+}
+
+function inferPeriodCountFromEndRow(startMin, endMin, daytime) {
+  const startIdx = findStartPeriodIndex(startMin, daytime);
+  if (startIdx < 0) return null;
+
+  const endMinPart = endMin % 60;
+  const endHour = Math.floor(endMin / 60);
+
+  if (endMinPart === 50) {
+    for (let count = 1; count <= 3; count++) {
+      const expected = endForSpan(startIdx, count, daytime);
+      if (expected && t2m(expected) === endMin) return count;
+    }
+    return null;
+  }
+
+  if (endMinPart === 0) {
+    const targetEnd = endHour * 60 + 50;
+    for (let count = 1; count <= 3; count++) {
+      const expected = endForSpan(startIdx, count, daytime);
+      if (expected && t2m(expected) === targetEnd) return count;
+    }
+    const hourSpan = Math.max(1, endHour - Math.floor(startMin / 60));
+    if (hourSpan <= 3) return hourSpan;
+  }
+
+  return null;
+}
+
+function normalizeEverytimeClassTimes(start, end) {
+  const daytime = getDaytimePeriods();
+  const durations = _classPeriodsCache?.consecutiveSpan?.durationsMin || VALID_PERIOD_DURATIONS;
+
+  const st = t2m(start);
+  let en = t2m(end);
+  if (st == null || en == null || en <= st) return null;
+
+  const startMinPart = st % 60;
+  const normalizedStart = startMinPart === 0 ? st : Math.floor(st / 60) * 60;
+  const startIdx = findStartPeriodIndex(normalizedStart, daytime);
+  if (startIdx < 0) return null;
+
+  let periodCount = inferPeriodCountFromEndRow(normalizedStart, en, daytime);
+
+  if (periodCount == null) {
+    const endMinPart = en % 60;
+    const endHour = Math.floor(en / 60);
+    if (endMinPart === 0 || endMinPart === 50) {
+      periodCount = Math.max(1, endHour - Math.floor(normalizedStart / 60));
+    } else {
+      en = endHour * 60 + 50;
+      periodCount = inferPeriodCountFromEndRow(normalizedStart, en, daytime);
+    }
+  }
+
+  if (periodCount == null || periodCount < 1 || periodCount > 3) return null;
+
+  const endStr = endForSpan(startIdx, periodCount, daytime);
+  if (!endStr) return null;
+
+  const duration = t2m(endStr) - normalizedStart;
+  if (!durations.includes(duration)) return null;
+
+  return { start: m2t(normalizedStart), end: endStr };
+}
+
 function resolveRoomToBuildingKey(room, fallbackKey) {
   if (!room) return fallbackKey || null;
   const r = String(room).toUpperCase();
@@ -187,16 +310,18 @@ function normalizeClass(raw) {
     resolveBuildingKey(raw.현재건물키) ||
     resolveRoomToBuildingKey(room, null) ||
     resolveBuildingKey(raw.building);
-  const start = raw.start || raw.시작 || raw.startTime;
-  const end = raw.end || raw.종료 || raw.endTime;
-  if (!start || !end) return null;
+  const startRaw = raw.start || raw.시작 || raw.startTime;
+  const endRaw = raw.end || raw.종료 || raw.endTime;
+  if (!startRaw || !endRaw) return null;
+  const times = normalizeEverytimeClassTimes(startRaw, endRaw);
+  if (!times) return null;
   const refDow = typeof KST !== 'undefined' ? KST.now().getDay() : new Date().getDay();
   const dow = normalizeDow(raw.dow != null ? raw.dow : raw.요일, refDow);
   const key = buildingKey && BUILDING_LABELS[buildingKey] ? buildingKey : resolveBuildingKey(buildingKey) || '3공';
   return {
     dow,
-    start: String(start).slice(0, 5),
-    end: String(end).slice(0, 5),
+    start: times.start,
+    end: times.end,
     name: raw.name || raw.과목 || raw.subject || '수업',
     room: room || '',
     buildingKey: key,
@@ -517,6 +642,8 @@ window.TimetableUtil = {
   analyzeFromClasses,
 
   loadLectureDb,
+  loadClassPeriods,
+  getDaytimePeriods,
   getLectureDbSync,
   findLectureNameForClass,
   enrichClassesWithLectureDb,

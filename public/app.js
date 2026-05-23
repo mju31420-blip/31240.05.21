@@ -804,6 +804,9 @@ async function applyScheduleAnalysis(rawApi, sourceLabel = '분석') {
   if (typeof TimetableUtil !== 'undefined' && TimetableUtil.loadLectureDb) {
     await TimetableUtil.loadLectureDb();
   }
+  if (typeof TimetableUtil !== 'undefined' && TimetableUtil.loadClassPeriods) {
+    await TimetableUtil.loadClassPeriods();
+  }
   const ocrUsed = /AI|이미지|OCR/i.test(sourceLabel);
   const data = refineScheduleAnalysis(rawApi);
   if (data.scheduleMeta && ocrUsed) data.scheduleMeta.ocrUsed = true;
@@ -2880,6 +2883,7 @@ async function bootApp() {
   }
   if (typeof TimetableUtil !== 'undefined') {
     TimetableUtil.loadUserTimetable();
+    if (TimetableUtil.loadClassPeriods) void TimetableUtil.loadClassPeriods();
     if (TimetableUtil.loadLectureDb) void TimetableUtil.loadLectureDb().then(() => updateSavedTimetableUi());
   }
   updateSavedTimetableUi();
