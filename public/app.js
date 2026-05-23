@@ -1369,23 +1369,17 @@ function restaurantSortTuple(row, mode, period) {
   const m = mode || 'balance';
   const mealPeriod = period || mealMode || 'lunch';
 
-  if (mealPeriod === 'dinner') {
-    if (m === 'food') {
-      return [closed, tier, -(row.cuisineHits ?? 0), -(row.tasteScore ?? 0), -(row.foodScore ?? 0), walk, key];
-    }
-    if (m === 'distance') {
+  /** 거리·왕복만 공강 부족(tier) 우선 — 균형·음식은 가중치 점수로 순서를 갈라야 탭 전환이 보임 */
+  if (m === 'distance') {
+    if (mealPeriod === 'dinner') {
       return [closed, tier, walk, total, wait, key];
     }
-    return [closed, tier, -(row.balanceScore ?? 0), -margin, walk, key];
-  }
-
-  if (m === 'distance') {
     return [closed, tier, walk, total, wait, -margin, key];
   }
+
   if (m === 'food') {
     return [
       closed,
-      tier,
       -(row.cuisineFocus ?? 0),
       -(row.cuisineHits ?? 0),
       -(row.tasteScore ?? 0),
@@ -1394,7 +1388,11 @@ function restaurantSortTuple(row, mode, period) {
       key,
     ];
   }
-  return [closed, tier, -(row.balanceScore ?? 0), -margin, total, walk, key];
+
+  if (mealPeriod === 'dinner') {
+    return [closed, -(row.balanceScore ?? 0), -margin, walk, key];
+  }
+  return [closed, -(row.balanceScore ?? 0), -margin, total, walk, key];
 }
 
 function sortRestaurantRows(rows, mode, period) {
@@ -2167,7 +2165,10 @@ function drawFood() {
   ordered.forEach((row, idx) => {
     const { key, e, n, st, menus, walk, back, wait, total, margin, cardState, hoursText, tier, infeasible } = row;
     const isClosed = cardState === 'closed';
-    const isPick = idx === 0 && !isClosed && tier === 0 && !infeasible;
+    const isPick =
+      idx === 0 &&
+      !isClosed &&
+      (rankMode === 'distance' ? tier === 0 && !infeasible : cardState === 'operating');
     if (isPick) {
       pickName = n;
       pickKey = key;

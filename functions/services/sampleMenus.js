@@ -1,71 +1,69 @@
-/** 크롤 실패 시 요일별 점심/저녁 샘플 (dow: 0=일 … 6=토, dateKey: MM-DD) */
+/** 크롤 실패 시 식당·요일별 점심/저녁 샘플 (dow: 0=일 … 6=토) */
 export function getSampleMenus() {
   const lunchByDow = {
-    1: [
-      { n: '제육볶음', t: '고기류', k: 0 },
-      { n: '김치찌개', t: '찌개류', k: 0 },
-      { n: '비빔밥', t: '건강식', k: 0 },
-    ],
-    2: [
-      { n: '돈까스', t: '고기류', k: 0 },
-      { n: '우동', t: '면류', k: 0 },
-      { n: '미역국', t: '찌개류', k: 0 },
-    ],
-    3: [
-      { n: '불고기', t: '고기류', k: 0 },
-      { n: '된장찌개', t: '찌개류', k: 0 },
-      { n: '잡곡밥', t: '건강식', k: 0 },
-    ],
-    4: [
-      { n: '치킨마요덮밥', t: '면류', k: 0 },
-      { n: '순두부찌개', t: '찌개류', k: 0 },
-      { n: '야채볶음', t: '건강식', k: 0 },
-    ],
-    5: [
-      { n: '스파게티', t: '면류', k: 0 },
-      { n: '함박스테이크', t: '고기류', k: 0 },
-      { n: '콩나물국', t: '찌개류', k: 0 },
-    ],
+    1: ['제육볶음', '김치찌개', '비빔밥'],
+    2: ['돈까스', '우동', '미역국'],
+    3: ['불고기', '된장찌개', '잡곡밥'],
+    4: ['치킨마요덮밥', '순두부찌개', '야채볶음'],
+    5: ['스파게티', '함박스테이크', '콩나물국'],
   };
   const dinnerByDow = {
-    1: [
-      { n: '치킨가라아게', t: '고기류', k: 0 },
-      { n: '냉면', t: '면류', k: 0 },
-    ],
-    2: [
-      { n: '제육덮밥', t: '고기류', k: 0 },
-      { n: '라면', t: '면류', k: 0 },
-    ],
-    3: [
-      { n: '생선구이', t: '고기류', k: 0 },
-      { n: '카레라이스', t: '면류', k: 0 },
-    ],
-    4: [
-      { n: '오징어볶음', t: '고기류', k: 0 },
-      { n: '짜장면', t: '면류', k: 0 },
-    ],
-    5: [
-      { n: '삼겹살구이', t: '고기류', k: 0 },
-      { n: '우동', t: '면류', k: 0 },
-    ],
+    1: ['치킨가라아게', '냉면'],
+    2: ['제육덮밥', '라면'],
+    3: ['생선구이', '카레라이스'],
+    4: ['오징어볶음', '짜장면'],
+    5: ['삼겹살구이', '우동'],
   };
-  const defaultLunch = lunchByDow[3];
-  const defaultDinner = dinnerByDow[3];
 
-  function week() {
+  /** 식당마다 메뉴를 다르게 — 음식·취향 탭 순위 분리용 */
+  const restaurantLunch = {
+    기숙사: {
+      3: ['제육볶음', '순두부찌개', '비빔밥'],
+      4: ['갈비찜', '미역국', '잡곡밥'],
+    },
+    명진당: {
+      3: ['돈까스', '우동', '규동'],
+      4: ['가츠동', '라멘', '야끼소바'],
+    },
+    교직원: {
+      3: ['불고기', '된장찌개', '잡곡밥'],
+      4: ['닭갈비', '순두부찌개', '비빔밥'],
+    },
+    학생회관: {
+      3: ['스파게티', '함박스테이크', '피자토스트'],
+      4: ['로제파스타', '치킨텐더', '샐러드'],
+    },
+  };
+
+  const restaurantDinner = {
+    명진당: { 3: ['가라아게', '우동'], 5: ['돈까스', '라멘'] },
+    학생회관: { 3: ['파스타', '스테이크'], 5: ['함박', '수프'] },
+  };
+
+  function toItems(names) {
+    return (names || []).map((n) => ({ n, t: '없음', k: 0 }));
+  }
+
+  function namesFor(map, dow, fallback) {
+    return map?.[dow] || map?.[3] || fallback[dow] || fallback[3] || fallback[1];
+  }
+
+  function weekFor(lunchMap, dinnerMap = dinnerByDow) {
     const days = {};
     for (let dow = 0; dow <= 6; dow++) {
-      const lunch = lunchByDow[dow] || defaultLunch;
-      const dinner = dinnerByDow[dow] || defaultDinner;
-      days[dow] = { l: [...lunch], d: [...dinner], b: [] };
+      days[dow] = {
+        l: toItems(namesFor(lunchMap, dow, lunchByDow)),
+        d: toItems(namesFor(dinnerMap, dow, dinnerByDow)),
+        b: [],
+      };
     }
     return days;
   }
 
   return {
-    기숙사: week(),
-    명진당: week(),
-    교직원: week(),
-    학생회관: week(),
+    기숙사: weekFor(restaurantLunch.기숙사),
+    명진당: weekFor(restaurantLunch.명진당, { ...dinnerByDow, ...restaurantDinner.명진당 }),
+    교직원: weekFor(restaurantLunch.교직원),
+    학생회관: weekFor(restaurantLunch.학생회관, { ...dinnerByDow, ...restaurantDinner.학생회관 }),
   };
 }

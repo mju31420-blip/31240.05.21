@@ -41,18 +41,13 @@ function restaurantSortTuple(row, mode, period = 'lunch') {
   const key = row.key || '';
   const m = mode || 'balance';
 
-  if (period === 'dinner') {
-    if (m === 'food') {
-      return [closed, tier, -(row.cuisineHits ?? 0), -(row.tasteScore ?? 0), -(row.foodScore ?? 0), walk, key];
-    }
-    if (m === 'distance') return [closed, tier, walk, total, wait, key];
-    return [closed, tier, -(row.balanceScore ?? 0), -margin, walk, key];
+  if (m === 'distance') {
+    if (period === 'dinner') return [closed, tier, walk, total, wait, key];
+    return [closed, tier, walk, total, wait, -margin, key];
   }
-  if (m === 'distance') return [closed, tier, walk, total, wait, -margin, key];
   if (m === 'food') {
     return [
       closed,
-      tier,
       -(row.cuisineFocus ?? 0),
       -(row.cuisineHits ?? 0),
       -(row.tasteScore ?? 0),
@@ -61,7 +56,8 @@ function restaurantSortTuple(row, mode, period = 'lunch') {
       key,
     ];
   }
-  return [closed, tier, -(row.balanceScore ?? 0), -margin, total, walk, key];
+  if (period === 'dinner') return [closed, -(row.balanceScore ?? 0), -margin, walk, key];
+  return [closed, -(row.balanceScore ?? 0), -margin, total, walk, key];
 }
 
 function sortByMode(rows, mode, period = 'lunch') {
@@ -195,4 +191,53 @@ if (!foodChanges) {
   console.error('FAIL: 취향 변경 시 food 순서 불변');
   process.exit(1);
 }
+// 공강 30분(베타 UI와 유사) — tier 분리 후에도 균형·음식은 거리와 달라야 함
+const gap30 = 30;
+const waitByKey = { 교직원: 5, 명진당: 12, 학생회관: 12, 기숙사: 12 };
+const rows30 = keys.map((key) => {
+  const walk = CD.walkToRest(fromKey, key);
+  const wait = waitByKey[key];
+  const total = walk + wait + CD.EAT_MIN;
+  const margin = gap30 - total;
+  const menus = menusByKey[key];
+  const fit = analyzeCuisineFit(menus, tastesHan);
+  const cuisineFocus = tastesHan.reduce((s, t) => s + (fit.breakdown[t] || 0), 0);
+  const scoreBase = {
+    fromKey,
+    nextKey,
+    gapMin: gap30,
+    restaurantKey: key,
+    waitMin: wait,
+    matchCount: fit.score,
+    period: 'lunch',
+    status: 'ok',
+  };
+  return {
+    key,
+    cardState: 'operating',
+    tier: margin < 0 ? 1 : 0,
+    walk,
+    wait,
+    total,
+    margin,
+    tasteScore: fit.score,
+    cuisineHits: fit.hits,
+    cuisineFocus,
+    balanceScore: CD.scoreRestaurant({ ...scoreBase, mode: 'balance' }).score,
+    foodScore: CD.scoreRestaurant({ ...scoreBase, mode: 'food' }).score,
+  };
+});
+const d30 = sortByMode(rows30, 'distance');
+const b30 = sortByMode(rows30, 'balance');
+const f30 = sortByMode(rows30, 'food');
+console.log('');
+console.log('=== 공강 30분 (짧은 공강) ===');
+console.log('distance:', orderLabel(d30));
+console.log('balance :', orderLabel(b30));
+console.log('food    :', orderLabel(f30));
+if (orderLabel(d30) === orderLabel(b30) && orderLabel(d30) === orderLabel(f30)) {
+  console.error('FAIL: 공강 30분에서 세 모드 동일');
+  process.exit(1);
+}
+
 console.log('OK: 모드·취향별 순서 차이 확인');
