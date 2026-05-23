@@ -26,11 +26,20 @@ function detectTag(name) {
   return '없음';
 }
 
+const EMPTY_MENU_RE = /등록된\s*식단|식단내용이\s*없/;
+
 function parseDateCell(text) {
-  const m = text.match(/(\d{2})\.(\d{2})\s*\(([월화수목금토일])\)/);
+  const m = text.match(/(\d{2})\.(\d{2})\s*\(\s*([월화수목금토일])\s*\)/);
   if (!m) return null;
   const dowMap = { 일: 0, 월: 1, 화: 2, 수: 3, 목: 4, 금: 5, 토: 6 };
-  return { month: parseInt(m[1], 10), day: parseInt(m[2], 10), dow: dowMap[m[3]] ?? 0 };
+  const month = parseInt(m[1], 10);
+  const day = parseInt(m[2], 10);
+  return {
+    month,
+    day,
+    dow: dowMap[m[3]] ?? 0,
+    dateKey: `${m[1]}-${m[2]}`,
+  };
 }
 
 function parseMenuItems(content) {
@@ -52,6 +61,7 @@ function parseMenuItems(content) {
 function parseTableRows($) {
   const days = {};
   let currentDow = null;
+  let currentDateKey = null;
   $('table tr').each((_, row) => {
     const cells = $(row)
       .find('td, th')
@@ -60,23 +70,28 @@ function parseTableRows($) {
       .filter(Boolean);
     if (cells.length < 3) return;
     const dateInfo = parseDateCell(cells[0]);
-    if (dateInfo) currentDow = dateInfo.dow;
+    if (dateInfo) {
+      currentDow = dateInfo.dow;
+      currentDateKey = dateInfo.dateKey;
+    }
     const mealIdx = cells.findIndex((c) => MEAL_SLOT[c]);
-    if (mealIdx < 0 || currentDow == null) return;
+    if (mealIdx < 0 || currentDateKey == null) return;
     const slot = MEAL_SLOT[cells[mealIdx]];
     let content = '';
     for (let i = mealIdx + 1; i < cells.length; i++) {
       const c = cells[i];
       if (c === '-' || MEAL_SLOT[c] || parseDateCell(c)) continue;
-      if (c.length > 4) {
+      if (c.length > 4 && !EMPTY_MENU_RE.test(c)) {
         content = c;
         break;
       }
     }
     const items = parseMenuItems(content);
     if (!items.length) return;
-    if (!days[currentDow]) days[currentDow] = { l: [], d: [], b: [] };
-    days[currentDow][slot] = items;
+    if (!days[currentDateKey]) {
+      days[currentDateKey] = { l: [], d: [], b: [], dow: currentDow };
+    }
+    days[currentDateKey][slot] = items;
   });
   return days;
 }

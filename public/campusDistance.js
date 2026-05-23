@@ -3,7 +3,7 @@
  * 출처: 캠퍼스 동선 기준 추정 (실측 데이터로 교체 가능)
  */
 window.CampusDistance = (function () {
-  const EAT_MIN = 20;
+  const EAT_MIN = 15;
 
   /** 수업 건물 → 식당 (편도 분) */
   const TO_REST = {

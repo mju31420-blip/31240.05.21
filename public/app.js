@@ -275,18 +275,27 @@ function normalizeMenusPayload(raw) {
   const src = raw && typeof raw === 'object' ? raw : {};
   const out = {};
 
+  function normalizeDaySlots(slots) {
+    return {
+      l: Array.isArray(slots?.l) ? slots.l : [],
+      d: Array.isArray(slots?.d) ? slots.d : [],
+      b: Array.isArray(slots?.b) ? slots.b : [],
+      dow: typeof slots?.dow === 'number' ? slots.dow : undefined,
+    };
+  }
+
   function normalizeDays(restaurantSrc) {
     const days = {};
     const base = restaurantSrc?.days && typeof restaurantSrc.days === 'object' ? restaurantSrc.days : restaurantSrc;
     if (!base || typeof base !== 'object') return days;
     for (const [dk, slots] of Object.entries(base)) {
+      if (/^\d{2}-\d{2}$/.test(dk)) {
+        days[dk] = normalizeDaySlots(slots);
+        continue;
+      }
       const dow = parseInt(dk, 10);
       if (Number.isNaN(dow) || dow < 0 || dow > 6) continue;
-      days[dow] = {
-        l: Array.isArray(slots?.l) ? slots.l : [],
-        d: Array.isArray(slots?.d) ? slots.d : [],
-        b: Array.isArray(slots?.b) ? slots.b : [],
-      };
+      days[dow] = normalizeDaySlots(slots);
     }
     return days;
   }
@@ -300,10 +309,33 @@ function normalizeMenusPayload(raw) {
   return out;
 }
 
-function getMenuDayData(restaurantDays, day) {
-  if (!restaurantDays || day == null) return null;
-  const n = Number(day);
-  return restaurantDays[n] ?? restaurantDays[String(n)] ?? null;
+function menuDateKey(refDate) {
+  const d = refDate instanceof Date ? refDate : new Date(refDate);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${mm}-${dd}`;
+}
+
+/** dayOffset: 0=오늘, 1=내일 (KST 기준) */
+function menuRefDate(dayOffset = 0) {
+  const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
+  const target = new Date(ref.getTime());
+  target.setDate(target.getDate() + dayOffset);
+  return target;
+}
+
+function getMenuDayData(restaurantDays, refOrDow) {
+  if (!restaurantDays) return null;
+  const ref =
+    refOrDow instanceof Date
+      ? refOrDow
+      : typeof refOrDow === 'number'
+        ? menuRefDate(refOrDow)
+        : menuRefDate(0);
+  const dateKey = menuDateKey(ref);
+  if (restaurantDays[dateKey]) return restaurantDays[dateKey];
+  const dow = ref.getDay();
+  return restaurantDays[dow] ?? restaurantDays[String(dow)] ?? null;
 }
 
 /* ════════════════════════════ CAMPUS SCHEDULE / CROWD ════ */
@@ -574,7 +606,7 @@ async function loadMenus(refresh = false) {
       MENU_RESTAURANT_KEYS.map((k) => ({
         key: k,
         dayKeys: Object.keys(MENUS[k] || {}),
-        todayLunch: getMenuDayData(MENUS[k], menuDayIndex(0))?.l?.length ?? 0,
+        todayLunch: getMenuDayData(MENUS[k], menuRefDate(0))?.l?.length ?? 0,
       })),
     );
     if (lastData) drawFood();
@@ -1534,18 +1566,13 @@ function isNoSchoolDay(d) {
   return dow === 0 || dow === 6;
 }
 
-function menuDayIndex(dayOffset = 0) {
-  const now = typeof KST !== 'undefined' ? KST.now() : new Date();
-  return (now.getDay() + dayOffset) % 7;
-}
-
 function getMenus(key, period, dayOffset = null) {
   const offset = dayOffset !== null ? dayOffset : dayMode === 'tomorrow' ? 1 : 0;
-  const day = menuDayIndex(offset);
+  const ref = menuRefDate(offset);
   const slot = period === 'dinner' ? 'd' : 'l';
   const restaurantDays = MENUS[key];
   if (!restaurantDays) return [];
-  const dayData = getMenuDayData(restaurantDays, day) || {};
+  const dayData = getMenuDayData(restaurantDays, ref) || {};
   let raw = dayData[slot] || [];
   if (!raw.length && period === 'dinner' && (key === '명진당' || key === '학생회관')) {
     raw = dayData.l?.length ? dayData.l : dayData.b || [];
@@ -1735,12 +1762,11 @@ function buildTomorrow(cur, period) {
   const mult2 = (PMULT[period] || 1) * 1.1;
   const walkFn =
     typeof CampusDistance !== 'undefined' ? (k) => CampusDistance.walkToRest(cur, k) : () => 8;
-  const tomorrowDay = menuDayIndex(1);
+  const tomorrowRef = menuRefDate(1);
+  const tomorrowDay = tomorrowRef.getDay();
   const 식당 = {};
   ['기숙사', '명진당', '교직원', '학생회관'].forEach((key) => {
     const walkMin = walkFn(key);
-    const tomorrowRef = typeof KST !== 'undefined' ? KST.now() : new Date();
-    tomorrowRef.setDate(tomorrowRef.getDate() + 1);
     if (tomorrowDay === 0 || tomorrowDay === 6 || isNoSchoolDay(tomorrowRef)) {
       식당[key] = {
         상태: 'closed',
