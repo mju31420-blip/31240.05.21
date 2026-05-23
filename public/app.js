@@ -1414,44 +1414,72 @@ function toRankCompareRow(row) {
     total: row.total,
     tasteScore: row.tasteScore,
     matchHits: row.matchHits,
+    balanceScore: row.balanceScore,
+    foodScore: row.foodScore,
     score: row.score,
     tier: row.tier,
   };
 }
 
 function compareRestaurantRows(a, b, mode, period) {
+  const cA = isRestaurantClosed(a);
+  const cB = isRestaurantClosed(b);
+  if (cA !== cB) return cA ? 1 : -1;
+  if (cA && cB) return (a.key || '').localeCompare(b.key || '', 'ko');
+
+  const tierA = a.tier ?? 0;
+  const tierB = b.tier ?? 0;
+  if (tierA !== tierB) return tierA - tierB;
+
   const mealPeriod = period || mealMode || 'lunch';
   if (typeof CampusDistance !== 'undefined' && typeof CampusDistance.compareRestaurants === 'function') {
     return CampusDistance.compareRestaurants(a, b, mode, mealPeriod);
   }
-  const cA = isRestaurantClosed(a);
-  const cB = isRestaurantClosed(b);
-  if (cA !== cB) return cA ? 1 : -1;
-  const tierA = a.tier ?? 0;
-  const tierB = b.tier ?? 0;
-  if (tierA !== tierB) return tierA - tierB;
-  if (mode === 'distance') {
-    return (
-      (a.walk || 0) - (b.walk || 0) ||
-      (a.total || 0) - (b.total || 0) ||
-      (a.wait || 0) - (b.wait || 0) ||
-      (b.margin ?? 0) - (a.margin ?? 0)
-    );
+
+  const m = mode || 'balance';
+  const walkA = a.walk ?? 999;
+  const walkB = b.walk ?? 999;
+  const waitA = a.wait ?? 999;
+  const waitB = b.wait ?? 999;
+  const totalA = a.total ?? 999;
+  const totalB = b.total ?? 999;
+  const tasteA = a.tasteScore ?? 0;
+  const tasteB = b.tasteScore ?? 0;
+  const matchA = a.matchHits ?? 0;
+  const matchB = b.matchHits ?? 0;
+  const marginA = typeof a.margin === 'number' ? a.margin : -999;
+  const marginB = typeof b.margin === 'number' ? b.margin : -999;
+  const balanceA = a.balanceScore ?? a.score ?? 0;
+  const balanceB = b.balanceScore ?? b.score ?? 0;
+  const foodA = a.foodScore ?? a.score ?? 0;
+  const foodB = b.foodScore ?? b.score ?? 0;
+  const keyCmp = () => (a.key || '').localeCompare(b.key || '', 'ko');
+
+  if (mealPeriod === 'dinner') {
+    if (m === 'food') {
+      if (matchB !== matchA) return matchB - matchA;
+      if (tasteB !== tasteA) return tasteB - tasteA;
+      if (foodB !== foodA) return foodB - foodA;
+      return walkA - walkB || totalA - totalB || keyCmp();
+    }
+    if (m === 'distance') {
+      return walkA - walkB || totalA - totalB || waitA - waitB || keyCmp();
+    }
+    if (balanceB !== balanceA) return balanceB - balanceA;
+    return marginB - marginA || walkA - walkB || keyCmp();
   }
-  if (mode === 'food') {
-    return (
-      (b.matchHits || 0) - (a.matchHits || 0) ||
-      (b.tasteScore || 0) - (a.tasteScore || 0) ||
-      (a.walk || 0) - (b.walk || 0) ||
-      (a.total || 0) - (b.total || 0)
-    );
+
+  if (m === 'distance') {
+    return walkA - walkB || totalA - totalB || waitA - waitB || marginB - marginA || keyCmp();
   }
-  return (
-    b.score - a.score ||
-    (b.margin ?? 0) - (a.margin ?? 0) ||
-    (a.total || 0) - (b.total || 0) ||
-    (a.walk || 0) - (b.walk || 0)
-  );
+  if (m === 'food') {
+    if (matchB !== matchA) return matchB - matchA;
+    if (tasteB !== tasteA) return tasteB - tasteA;
+    if (foodB !== foodA) return foodB - foodA;
+    return walkA - walkB || totalA - totalB || keyCmp();
+  }
+  if (balanceB !== balanceA) return balanceB - balanceA;
+  return marginB - marginA || totalA - totalB || walkA - walkB || keyCmp();
 }
 
 function crowdBadgeLabel(st, baseBadge) {
@@ -2017,14 +2045,8 @@ function drawFood() {
     const isClosed = cardState === 'closed';
     const showMenus = !isClosed && !menuOffDay;
     const menus = showMenus ? getMenus(def.key, mealMode, menuDayOff) : [];
-    const walk =
-      typeof CampusDistance !== 'undefined'
-        ? CampusDistance.walkToRest(fromKey, def.key)
-        : base.도보분 ?? 8;
-    const back =
-      typeof CampusDistance !== 'undefined'
-        ? CampusDistance.walkRestToBuilding(def.key, nextKey)
-        : base.복귀분 ?? 0;
+    const walk = base.도보분 ?? CampusDistance.walkToRest(fromKey, def.key);
+    const back = base.복귀분 ?? CampusDistance.walkRestToBuilding(def.key, nextKey);
     const congBase = base.혼잡도 || getDynamicCrowd(def.key);
     const liveCong = cardState === 'operating' ? getDynamicCrowd(def.key) : congBase;
     const liveWait = cardState === 'dinner_soon' ? 0 : waitMin(liveCong);
@@ -2038,19 +2060,27 @@ function drawFood() {
     const st = isClosed ? 'closed' : liveCong >= 80 ? 'bad' : liveCong >= 55 ? 'warn' : 'ok';
     const tasteScore = cuisineMatchScore(menus, effectiveTastes());
     const matchHits = menuMatchHits(menus);
+    const scoreBase = {
+      fromKey,
+      nextKey,
+      gapMin,
+      restaurantKey: def.key,
+      waitMin: liveWait,
+      matchCount: tasteScore,
+      period: mealMode,
+      status: st,
+    };
+    const balanceResult = isClosed
+      ? { score: 0, tier: 2, infeasible: false, margin }
+      : getRestaurantScore({ ...scoreBase, mode: 'balance' });
+    const foodResult = isClosed
+      ? { score: 0, tier: 2, infeasible: false, margin }
+      : getRestaurantScore({ ...scoreBase, mode: 'food' });
     const scoreResult = isClosed
       ? { score: 0, closed: true, tier: 2, infeasible: false, margin }
-      : getRestaurantScore({
-          fromKey,
-          nextKey,
-          gapMin,
-          restaurantKey: def.key,
-          waitMin: liveWait,
-          matchCount: tasteScore,
-          mode: activeRankMode,
-          period: mealMode,
-          status: st,
-        });
+      : getRestaurantScore({ ...scoreBase, mode: activeRankMode });
+    const balanceScore = isClosed ? 0 : balanceResult.score ?? 0;
+    const foodScore = isClosed ? 0 : foodResult.score ?? 0;
     const score = isClosed ? 0 : scoreResult.score ?? 0;
     const rowMargin = scoreResult.margin ?? margin;
     const hoursText = buildCardHoursText(def.key, mealMode, cardState, {
@@ -2070,6 +2100,8 @@ function drawFood() {
       total,
       margin: rowMargin,
       score,
+      balanceScore,
+      foodScore,
       tasteScore,
       matchHits,
       cardState,
@@ -2081,18 +2113,21 @@ function drawFood() {
     };
   });
 
-  const ordered = [...scored].sort((a, b) =>
+  const rankableRows = [];
+  const closedRows = [];
+  for (const row of scored) {
+    (isRankableRestaurant(row) ? rankableRows : closedRows).push(row);
+  }
+  rankableRows.sort((a, b) =>
     compareRestaurantRows(toRankCompareRow(a), toRankCompareRow(b), activeRankMode, mealMode),
   );
+  closedRows.sort((a, b) => (a.key || '').localeCompare(b.key || '', 'ko'));
+  const ordered = rankableRows.concat(closedRows);
 
   let pickName = '추천 식당';
   let pickKey = ordered[0]?.key;
   const wrap = document.getElementById('rcWrap');
-  const shortGapBanner =
-    dayMode === 'today' && gapMin < 45
-      ? '<div class="gap-short-banner">⚠️ 공강이 짧아요! 빠른 식당을 우선 추천해요</div>'
-      : '';
-  wrap.innerHTML = shortGapBanner;
+  wrap.innerHTML = '';
 
   ordered.forEach((row, idx) => {
     const { key, e, n, st, menus, walk, back, wait, total, margin, cardState, hoursText, tier, infeasible } = row;

@@ -202,12 +202,21 @@ window.CampusDistance = (function () {
   }
 
   /**
-   * 모드별 핵심 비교 (운영 종료·시간 부족도 동일 규칙 — 이름순만 쓰면 세 탭이 똑같이 보임)
-   * - distance: 편도 도보 → 왕복 총시간 → 대기
-   * - food: 취향 메뉴 수 → 취향 점수 → 편도 도보
-   * - balance: 종합 점수 → 공강 여유 → 왕복
+   * 카드 순서만 모드별로 다르게 (배너·UI 문구와 무관)
+   * - distance: 편도 도보 → 왕복 총시간 → 대기 (종합점수 미사용)
+   * - food: 취향 메뉴 수 → 취향 점수 → 음식 모드 점수
+   * - balance: 균형 모드 점수 → 공강 여유 → 왕복
    */
-  function compareByRankMode(a, b, mode, period) {
+  function compareRestaurants(a, b, mode, period) {
+    const cA = isClosedEntry(a);
+    const cB = isClosedEntry(b);
+    if (cA !== cB) return cA ? 1 : -1;
+    if (cA && cB) return restaurantKeyLabel(a).localeCompare(restaurantKeyLabel(b), 'ko');
+
+    const tierA = rankTier(a);
+    const tierB = rankTier(b);
+    if (tierA !== tierB) return tierA - tierB;
+
     const m = mode || 'balance';
     const mealPeriod = period || 'lunch';
     const walkA = a.walk ?? 999;
@@ -222,16 +231,31 @@ window.CampusDistance = (function () {
     const matchB = b.matchHits ?? 0;
     const marginA = typeof a.margin === 'number' ? a.margin : -999;
     const marginB = typeof b.margin === 'number' ? b.margin : -999;
+    const balanceA = a.balanceScore ?? 0;
+    const balanceB = b.balanceScore ?? 0;
+    const foodA = a.foodScore ?? 0;
+    const foodB = b.foodScore ?? 0;
+    const keyCmp = () => restaurantKeyLabel(a).localeCompare(restaurantKeyLabel(b), 'ko');
 
     if (mealPeriod === 'dinner') {
       if (m === 'food') {
         if (matchB !== matchA) return matchB - matchA;
         if (tasteB !== tasteA) return tasteB - tasteA;
+        if (foodB !== foodA) return foodB - foodA;
+        if (walkA !== walkB) return walkA - walkB;
+        if (totalA !== totalB) return totalA - totalB;
+        return keyCmp();
       }
+      if (m === 'distance') {
+        if (walkA !== walkB) return walkA - walkB;
+        if (totalA !== totalB) return totalA - totalB;
+        if (waitA !== waitB) return waitA - waitB;
+        return keyCmp();
+      }
+      if (balanceB !== balanceA) return balanceB - balanceA;
+      if (marginB !== marginA) return marginB - marginA;
       if (walkA !== walkB) return walkA - walkB;
-      if (totalA !== totalB) return totalA - totalB;
-      if (m === 'balance' && b.score !== a.score) return b.score - a.score;
-      return 0;
+      return keyCmp();
     }
 
     if (m === 'distance') {
@@ -239,40 +263,21 @@ window.CampusDistance = (function () {
       if (totalA !== totalB) return totalA - totalB;
       if (waitA !== waitB) return waitA - waitB;
       if (marginB !== marginA) return marginB - marginA;
-      return 0;
+      return keyCmp();
     }
-
     if (m === 'food') {
       if (matchB !== matchA) return matchB - matchA;
       if (tasteB !== tasteA) return tasteB - tasteA;
+      if (foodB !== foodA) return foodB - foodA;
       if (walkA !== walkB) return walkA - walkB;
       if (totalA !== totalB) return totalA - totalB;
-      return 0;
+      return keyCmp();
     }
-
-    if (b.score !== a.score) return b.score - a.score;
+    if (balanceB !== balanceA) return balanceB - balanceA;
     if (marginB !== marginA) return marginB - marginA;
     if (totalA !== totalB) return totalA - totalB;
     if (walkA !== walkB) return walkA - walkB;
-    return 0;
-  }
-
-  /**
-   * 카드 순서 — 모드마다 compareByRankMode 규칙 적용 (종료 식당도 모드별 정렬 후 맨 아래)
-   */
-  function compareRestaurants(a, b, mode, period) {
-    const cA = isClosedEntry(a);
-    const cB = isClosedEntry(b);
-    if (cA !== cB) return cA ? 1 : -1;
-
-    const tierA = rankTier(a);
-    const tierB = rankTier(b);
-    if (tierA !== tierB) return tierA - tierB;
-
-    const modeCmp = compareByRankMode(a, b, mode, period);
-    if (modeCmp !== 0) return modeCmp;
-
-    return restaurantKeyLabel(a).localeCompare(restaurantKeyLabel(b), 'ko');
+    return keyCmp();
   }
 
   return {
