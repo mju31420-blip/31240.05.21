@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0c2461">
+<meta name="description" content="명지대 자연캠퍼스 AI 비서 — 시간표·식당·셔틀 실시간 안내">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="명비서">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<title>명비서 — 명지대 자연캠퍼스</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* ── RESET ── */
+:root{
+  --navy:#0c2461;--navy2:#071730;--navy3:#1a3c87;
+  --blue:#2563eb;--bluel:#3b82f6;
+  --goldl:#fbbf24;
+  --green:#059669;--greend:#d1fae5;
+  --red:#dc2626;--redd:#fee2e2;
+  --ora:#ea580c;--orad:#fff7ed;
+  --gray:#6b7280;--grayd:#f3f4f6;
+  --border:#e2e8f2;--card:#fff;
+  --text:#0f172a;--muted:#475569;--sub:#94a3b8;
+  --mono:'JetBrains Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;min-height:100%;font-family:'Noto Sans KR',sans-serif;color:var(--text);background:#eef2f9}
+html{overscroll-behavior:none}
+body{display:flex;justify-content:center;overscroll-behavior-y:none;-webkit-overflow-scrolling:touch}
+@media (display-mode:standalone){
+  body{background:#fff}
+  .shell{box-shadow:none;max-width:100%}
+}
+
+/* ── SHELL ── */
+.shell{
+  width:100%;max-width:430px;background:#fff;
+  min-height:100vh;min-height:100svh;display:flex;flex-direction:column;
+  box-shadow:0 0 60px rgba(7,23,48,.18);
+}
+
+/* ── ONBOARDING / 간단 설정 (첫 실행·설정 공용) ── */
+.ob-ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:300;display:none;align-items:flex-end;justify-content:center}
+.ob-ov.on{display:flex}
+.ob-sh{background:#fff;border-radius:24px 24px 0 0;width:100%;max-width:430px;max-height:90vh;max-height:90svh;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:max(16px,env(safe-area-inset-bottom));transform:translateY(100%);transition:transform .34s cubic-bezier(.32,.72,.24,1)}
+.ob-ov.on .ob-sh{transform:translateY(0)}
+html.ob-lock,html.ob-lock body{overflow:hidden}
+.ob-hd{background:linear-gradient(150deg,var(--navy2),var(--navy),var(--navy3));padding:30px 22px 22px;text-align:center}
+.ob-ico{width:46px;height:46px;background:linear-gradient(135deg,var(--goldl),#b45309);border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:22px;margin:0 auto 10px;box-shadow:0 4px 14px rgba(217,119,6,.4)}
+.ob-title{font-size:21px;font-weight:900;color:#fff;letter-spacing:-.3px}
+.ob-sub{font-size:11.5px;color:#93b8e8;margin-top:4px;line-height:1.55}
+.ob-bd{padding:18px 16px}
+.ob-sec{margin-bottom:20px}
+.ob-stitle{font-size:13px;font-weight:700;color:var(--navy);margin-bottom:3px}
+.ob-sdesc{font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{padding:9px 13px;border-radius:22px;font-size:13px;font-weight:700;cursor:pointer;border:1.5px solid var(--border);background:#f8fafc;color:var(--muted);transition:.18s;user-select:none;min-height:44px;display:flex;align-items:center;touch-action:manipulation}
+.chip.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.ob-inp{width:100%;padding:13px 14px;border-radius:12px;border:1.5px solid var(--border);font-size:15px;font-family:'Noto Sans KR',sans-serif;color:var(--text);outline:none;background:#f8fafc}
+.ob-inp:focus{border-color:var(--blue);background:#fff}
+.btn-ob{width:100%;background:linear-gradient(135deg,var(--navy),var(--blue));color:#fff;border:none;padding:15px;border-radius:12px;font-size:15px;font-weight:700;font-family:'Noto Sans KR',sans-serif;cursor:pointer;margin-top:6px;min-height:52px;transition:opacity .15s;touch-action:manipulation}
+.btn-ob:active{opacity:.85}
+
+/* ── HEADER ── */
+.hdr{background:linear-gradient(150deg,var(--navy2) 0%,var(--navy) 55%,var(--navy3) 100%);
+  padding:max(env(safe-area-inset-top),16px) 18px 0;
+  position:relative;overflow:hidden;flex-shrink:0}
+.hdr::before{content:'';position:absolute;width:200px;height:200px;
+  background:radial-gradient(circle,rgba(37,99,235,.25) 0%,transparent 65%);
+  top:-55px;right:-40px;border-radius:50%;pointer-events:none}
+.hdr-in{position:relative;z-index:1}
+.hdr-row{display:flex;justify-content:space-between;align-items:flex-start;padding-top:10px;margin-bottom:4px}
+.hdr-brand{display:flex;align-items:center;gap:9px}
+.hdr-ico{width:38px;height:38px;background:linear-gradient(135deg,var(--goldl),#b45309);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 3px 10px rgba(217,119,6,.4);flex-shrink:0}
+.hdr-name{font-size:21px;font-weight:900;color:#fff;letter-spacing:-.3px;line-height:1.1}
+.hdr-v{font-size:9px;font-weight:700;background:rgba(255,255,255,.15);color:#b8d4ff;padding:2px 6px;border-radius:20px;margin-left:4px;vertical-align:middle}
+.hdr-sub{font-size:10.5px;color:#7ea8e0;margin-top:1px}
+.hdr-wx{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.13);padding:6px 10px;border-radius:10px;text-align:right;font-size:10.5px;color:#c5daff;flex-shrink:0}
+.hdr-wxico{font-size:17px;display:block;color:#fff;line-height:1.2}
+.now-chip{display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.12);color:#b8d0ff;padding:5px 10px;border-radius:20px;font-size:10.5px;margin:8px 0 0}
+.pdot{width:5px;height:5px;background:#4ade80;border-radius:50%;animation:pd 2s infinite;flex-shrink:0}
+@keyframes pd{0%,100%{opacity:1}50%{opacity:.3}}
+.hdr-prof{background:rgba(255,255,255,.07);border-top:1px solid rgba(255,255,255,.09);
+  padding:9px 0;margin-top:9px;display:flex;justify-content:space-between;align-items:center}
+.hp-name{font-size:11.5px;color:#93b8e8}
+.hp-name b{color:#fff}
+.hp-home{font-size:10px;color:#7ea8e0;background:rgba(255,255,255,.1);padding:3px 8px;border-radius:20px;white-space:nowrap}
+.hdr-prof-side{display:flex;align-items:center;gap:10px;flex-shrink:0;margin-left:12px}
+.hdr-set-btn{background:rgba(255,255,255,.15);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:12px;cursor:pointer;font-family:'Noto Sans KR',sans-serif;white-space:nowrap}
+
+/* ── DAY BAR ── */
+.day-bar{background:#fff;padding:10px;text-align:center;border-bottom:1px solid var(--border);flex-shrink:0}
+.day-tog{display:inline-flex;background:#f1f5fb;border-radius:22px;padding:3px}
+.day-btn{background:transparent;border:none;padding:8px 18px;border-radius:19px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;font-family:'Noto Sans KR',sans-serif;transition:.18s;min-height:40px;touch-action:manipulation}
+.day-btn.on{background:var(--navy);color:#fff;box-shadow:0 2px 7px rgba(12,36,97,.22)}
+
+/* ── TABS ── */
+.tabs{display:flex;background:#fff;border-bottom:1px solid var(--border);position:relative;flex-shrink:0}
+.tb{flex:1;padding:11px 0 9px;text-align:center;font-size:11px;font-weight:700;color:var(--sub);cursor:pointer;transition:color .18s;user-select:none;min-height:44px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1px;line-height:1.3;touch-action:manipulation}
+.tb.on{color:var(--navy)}
+.tb-ink{position:absolute;bottom:0;height:2.5px;background:linear-gradient(90deg,var(--blue),var(--bluel));border-radius:2px 2px 0 0;transition:left .28s cubic-bezier(.4,0,.2,1),width .28s cubic-bezier(.4,0,.2,1)}
+
+/* ── CONTENT / PANES ── */
+.content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.content::-webkit-scrollbar{width:0}
+.pane{display:none;padding:16px 15px calc(28px + max(env(safe-area-inset-bottom),0px))}
+.pane.on{display:block;animation:fu .22s ease}
+@keyframes fu{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── SEC LABEL ── */
+.slbl{font-size:10px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.8px;display:flex;align-items:center;gap:5px;margin-bottom:12px}
+.slbl::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* ── INPUT MODE TOGGLE ── */
+.mtog{display:flex;background:#f1f5fb;border-radius:10px;padding:3px;gap:3px;margin-bottom:14px}
+.mb{flex:1;padding:10px 4px;border-radius:8px;text-align:center;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;border:none;background:transparent;font-family:'Noto Sans KR',sans-serif;transition:.18s;min-height:44px;touch-action:manipulation}
+.mb.on{background:#fff;color:var(--navy);box-shadow:0 2px 6px rgba(0,0,0,.08)}
+
+/* ── FORM FIELDS ── */
+.fld{margin-bottom:12px}
+.fld label{display:block;font-size:10.5px;font-weight:700;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}
+.fld select{
+  width:100%;padding:13px 14px;border-radius:12px;
+  border:1.5px solid var(--border);font-size:14px;
+  font-family:'Noto Sans KR',sans-serif;font-weight:500;color:var(--text);
+  background-color:#f8fafc;
+  background-image:url("data:image/svg+xml,%3Csvg width='11' height='7' viewBox='0 0 11 7' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4.5 4.5L10 1' stroke='%2394a3b8' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 14px center;
+  appearance:none;-webkit-appearance:none;outline:none;cursor:pointer;min-height:50px;
+}
+.fld select:focus{border-color:var(--blue);background-color:#fff}
+
+/* ── MAIN BUTTON ── */
+.btnm{
+  width:100%;margin-top:10px;
+  background:linear-gradient(135deg,var(--navy),var(--blue));
+  color:#fff;border:none;padding:15px;border-radius:12px;
+  font-size:15px;font-weight:700;font-family:'Noto Sans KR',sans-serif;
+  cursor:pointer;box-shadow:0 4px 14px rgba(12,36,97,.22);
+  display:flex;align-items:center;justify-content:center;gap:7px;
+  min-height:52px;transition:opacity .15s,transform .12s;
+  touch-action:manipulation;
+}
+.btnm:active{transform:scale(.97);opacity:.92}
+.btnm:disabled{opacity:.45;cursor:not-allowed}
+
+/* ── LOADING ── */
+.ldg{display:none;align-items:center;gap:9px;padding:13px 0;color:var(--blue);font-size:12.5px;font-weight:600}
+.ldg.on{display:flex}
+.dots span{width:6px;height:6px;border-radius:50%;background:var(--blue);animation:db 1.3s infinite;display:inline-block;margin-right:2px}
+.dots span:nth-child(2){animation-delay:.18s}
+.dots span:nth-child(3){animation-delay:.36s}
+@keyframes db{0%,80%,100%{transform:scale(.45);opacity:.3}40%{transform:scale(1);opacity:1}}
+
+/* ── UPLOAD ── */
+.upzone{border:1.5px dashed #c4d0f5;border-radius:14px;background:linear-gradient(145deg,#f3f7ff,#eaf1ff);padding:20px 14px;text-align:center;cursor:pointer;transition:.18s;margin-bottom:8px}
+.upzone:hover{border-color:var(--blue)}
+.upzone.done{border-style:solid;border-color:#93c5fd;background:#eff6ff}
+.up-prev{width:100%;border-radius:8px;max-height:130px;object-fit:cover;margin-bottom:7px;display:none}
+.up-ico{font-size:26px;margin-bottom:5px;display:block}
+.up-ttl{font-size:13px;font-weight:700;color:var(--navy);margin-bottom:2px}
+.up-hint{font-size:11px;color:var(--muted)}
+#fi{display:none}
+.api-inp{width:100%;padding:12px 13px;border-radius:10px;border:1.5px solid var(--border);font-size:12.5px;font-family:var(--mono);color:var(--text);background:#f8fafc;outline:none;margin-bottom:5px;min-height:46px}
+.api-inp:focus{border-color:var(--blue);background:#fff}
+.api-hint{font-size:10.5px;color:var(--sub);line-height:1.55}
+.api-hint a{color:var(--blue)}
+
+/* ── SCHEDULE BOARD ── */
+.sch-bd{background:#fff;border:1.5px solid #c7d7ff;border-radius:14px;padding:14px;margin-top:12px;display:none}
+.sch-bd.on{display:block;animation:fu .28s ease}
+.tt-timeline{margin-top:10px;padding-top:8px;border-top:1px dashed var(--border)}
+.tt-tl-title{font-size:11px;font-weight:700;color:var(--navy);margin-bottom:6px}
+.tt-tl-row{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:11px;border-bottom:1px solid #f0f4fb}
+.tt-tl-row.now{background:#eff6ff;border-radius:6px;padding:5px 6px;font-weight:700;color:var(--navy)}
+.tt-tl-row.done{color:var(--sub);opacity:.75}
+.tt-tl-time{min-width:78px;font-weight:600;color:var(--muted)}
+.tt-tl-dot{width:7px;height:7px;border-radius:50%;background:var(--border);flex-shrink:0}
+.tt-tl-row.now .tt-tl-dot{background:var(--blue)}
+.saved-tt-box{background:#f8fafc;border:1.5px solid var(--border);border-radius:12px;padding:12px;font-size:12px;color:var(--text);line-height:1.5;margin-bottom:10px}
+.tt-off-banner{background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;padding:10px 12px;font-size:11.5px;color:#92400e;line-height:1.45;margin:0 0 10px}
+.btn-ghost{width:100%;padding:10px;border-radius:10px;border:1.5px dashed var(--border);background:transparent;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;font-family:'Noto Sans KR',sans-serif}
+.sb-title{font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:10px}
+.dr{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #f0f4fb;font-size:12.5px}
+.dr:last-of-type{border-bottom:none}
+.dk{color:var(--muted)}
+.dv{font-weight:700;color:var(--navy);font-family:var(--mono);font-size:12px}
+.t-alert{margin-top:9px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:9px;padding:8px 12px;font-size:11.5px;font-weight:700;color:#92400e;display:flex;align-items:center;gap:6px}
+
+.ai-box{background:#f8fafc;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-top:9px;display:none;font-size:12.5px;line-height:1.75;color:var(--text)}
+.ai-box.on{display:block}
+.ai-lbl{font-size:10px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
+.cur{display:inline-block;width:2px;height:12px;background:var(--blue);animation:bl .8s infinite;vertical-align:text-bottom;margin-left:1px}
+@keyframes bl{0%,100%{opacity:1}50%{opacity:0}}
+
+/* ── MEAL TOGGLE (식당 탭 내부) ── */
+.meal-tog{display:flex;background:#f1f5fb;border-radius:12px;padding:3px;margin-bottom:14px}
+.meal-btn{flex:1;padding:10px 0;border-radius:9px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;border:none;background:transparent;font-family:'Noto Sans KR',sans-serif;transition:.18s;min-height:44px;display:flex;align-items:center;justify-content:center;gap:6px;touch-action:manipulation}
+.meal-btn.on{background:#fff;color:var(--navy);box-shadow:0 2px 7px rgba(0,0,0,.09)}
+
+/* ── RESTAURANT CARD (compact) ── */
+#rcWrap{display:flex;flex-direction:column;gap:8px}
+.rc-card{border-radius:12px;overflow:hidden;background:#fff;border:1.5px solid var(--border);box-shadow:0 1px 6px rgba(15,23,42,.05)}
+.rc-card--pick{border-color:#10b981;box-shadow:0 2px 10px rgba(16,185,129,.12)}
+.rc-card--closed{border-color:var(--border)}
+.rc-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;background:#0c2461}
+.rc-hd-name{font-size:14px;font-weight:700;color:#fff;flex:1;line-height:1.25}
+.rc-hd-name--muted{color:rgba(168,189,219,.82)}
+.rc-rank-tag{font-size:10px;font-weight:600;color:rgba(255,255,255,.65);margin-left:6px}
+.rc-badge{font-size:9px;font-weight:700;padding:3px 8px;border-radius:20px;color:#fff;white-space:nowrap;flex-shrink:0}
+.rc-badge--g{background:var(--green)}
+.rc-badge--o{background:var(--ora)}
+.rc-badge--r{background:var(--red)}
+.rc-badge--gr{background:var(--gray)}
+.rc-badge--closed{background:rgba(255,255,255,.13);color:rgba(203,213,232,.92)}
+.rc-badge--blue{background:#3b82f6}
+.rc-body{padding:8px 10px 10px}
+.rc-body--closed{padding:6px 10px 8px}
+.rc-hours{font-size:11px;color:var(--sub);line-height:1.45;margin-bottom:6px}
+.rc-time3{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:6px}
+.rc-tcell{text-align:center;background:#f3f4f6;border-radius:8px;padding:6px 4px}
+.rc-tval{display:block;font-size:18px;font-weight:500;color:var(--text);line-height:1.15;font-family:var(--mono)}
+.rc-tlbl{display:block;font-size:10px;color:var(--muted);margin-top:2px}
+.rc-twait--hot .rc-tval{color:var(--red)}
+.rc-twait--na .rc-tval{color:var(--muted)}
+.rc-margin{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 10px;border-radius:8px;background:#f8fafc;margin-bottom:6px;font-size:11px}
+.rc-margin-l{color:var(--muted)}
+.rc-margin-l b{color:var(--text);font-weight:600;font-family:var(--mono)}
+.rc-margin-r{font-weight:700;font-size:11.5px;flex-shrink:0}
+.rc-margin--safe .rc-margin-r{color:var(--green)}
+.rc-margin--tight .rc-margin-r{color:var(--ora)}
+.rc-margin--over .rc-margin-r{color:var(--red)}
+.rc-menus{display:grid;grid-template-columns:1fr 1fr;gap:4px 8px;margin-bottom:6px}
+.rc-menu-item{font-size:11px;color:var(--text);line-height:1.3;display:flex;align-items:flex-start;gap:3px;min-width:0}
+.rc-menu-item span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rc-menu-match{font-size:10px;font-weight:700;color:#d97706;flex-shrink:0}
+.rc-menu-empty{grid-column:1/-1;text-align:center;font-size:11px;color:var(--sub);padding:8px 6px;background:#f8fafc;border-radius:8px}
+.rc-closed-msg{font-size:11px;color:var(--sub);text-align:center;padding:8px 6px;background:#f8fafc;border-radius:8px;line-height:1.4}
+.rc-insta{display:block;width:100%;padding:8px 10px;background:#f1f5f9;border-radius:8px;font-size:11px;font-weight:600;color:var(--navy);text-decoration:none;text-align:center;border:none;font-family:'Noto Sans KR',sans-serif}
+.rc-insta:active{opacity:.85}
+.crowd-fb-g{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+.crowd-fb-btn{padding:10px 6px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11.5px;font-weight:600;cursor:pointer;font-family:'Noto Sans KR',sans-serif;touch-action:manipulation}
+.crowd-fb-btn:active{background:#eff6ff;border-color:var(--blue)}
+.visit-pick-g{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.visit-pick-btn{padding:12px 8px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;color:var(--navy);cursor:pointer;font-family:'Noto Sans KR',sans-serif;touch-action:manipulation}
+.visit-pick-btn:active{background:#eff6ff;border-color:var(--blue)}
+.delivery-wrap{margin-top:12px;padding:12px 14px;background:#f8fafc;border:1.5px solid var(--border);border-radius:14px;text-align:center}
+.delivery-main-btn{width:100%;padding:12px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:13px;font-weight:700;color:var(--navy);cursor:pointer;font-family:'Noto Sans KR',sans-serif}
+.delivery-options{display:none;flex-direction:column;gap:7px;margin-top:10px}
+.delivery-options.on{display:flex}
+.delivery-opt-btn{display:block;padding:10px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:13px;font-weight:600;color:var(--text);text-decoration:none;text-align:center}
+.delivery-opt-btn:active{opacity:.85}
+.hdr-taste-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;max-width:100%}
+.hdr-taste-chip{padding:3px 7px;border-radius:12px;font-size:9px;font-weight:700;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#b8d0ff;cursor:pointer;font-family:'Noto Sans KR',sans-serif}
+.hdr-taste-chip.on{background:rgba(74,222,128,.25);border-color:#4ade80;color:#fff}
+.menu-list{display:flex;flex-direction:column;gap:0}
+.menu-list .mrow{padding:6px 0}
+.bdg{font-size:10px;font-weight:700;padding:4px 9px;border-radius:20px;color:#fff;white-space:nowrap;flex-shrink:0}
+.bdg-g{background:var(--green)} .bdg-o{background:var(--ora)} .bdg-r{background:var(--red)} .bdg-gr{background:var(--gray)}
+.v-ok{color:var(--green)} .v-warn{color:var(--ora)} .v-bad{color:var(--red)}
+.c-safe{color:var(--green)} .c-tight{color:var(--ora)} .c-over{color:var(--red)}
+
+/* Bars */
+.bars{margin-bottom:9px}
+.bar-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.bar-lbl{width:26px;flex-shrink:0;text-align:right;font-family:var(--mono);color:var(--text);font-weight:600;font-size:10px}
+.bar-track{flex:1;height:5px;background:rgba(0,0,0,.07);border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px;width:0;transition:width 1s cubic-bezier(.4,0,.2,1)}
+.bf-w{background:#60a5fa} .bf-wt{background:var(--ora)} .bf-e{background:var(--green)}
+.bar-leg{display:flex;gap:10px;font-size:10px;color:var(--muted);margin-top:3px}
+.bleg{display:flex;align-items:center;gap:3px}
+.bleg-dot{width:7px;height:7px;border-radius:50%}
+
+/* Menu box */
+.menu-box{background:rgba(255,255,255,.75);border-radius:9px;padding:10px 12px;border:1px solid rgba(0,0,0,.05)}
+.menu-ttl{font-size:10.5px;font-weight:700;color:var(--muted);margin-bottom:7px;text-transform:uppercase;letter-spacing:.4px}
+.mrow{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px dashed rgba(0,0,0,.05);font-size:12px}
+.mrow:last-child{border-bottom:none}
+.mname{display:flex;align-items:center;gap:5px;color:var(--text);font-weight:500;flex:1;padding-right:6px;flex-wrap:wrap}
+.mt{font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;flex-shrink:0}
+.mt-rec{background:#dcfce7;color:#166534} .mt-hot{background:#fee2e2;color:#991b1b}
+.mt-new{background:#ede9fe;color:#5b21b6} .mt-match{background:#fef3c7;color:#92400e}
+.mkcal{font-size:10px;color:var(--sub);font-family:var(--mono);flex-shrink:0}
+
+/* ── GATE ── */
+.gate{text-align:center;padding:42px 18px;color:var(--sub)}
+.gate-ico{font-size:38px;margin-bottom:10px}
+.gate-title{font-size:14px;font-weight:700;color:var(--muted);margin-bottom:5px}
+.gate-desc{font-size:12px;line-height:1.65}
+
+/* ── FEEDBACK ── */
+.fb{background:#f8fafc;border:1.5px solid var(--border);border-radius:14px;padding:14px;text-align:center;margin-top:6px;display:none}
+.fb.on{display:block}
+.fb-title{font-size:13px;font-weight:700;color:var(--navy);margin-bottom:4px}
+.fb-desc{font-size:11.5px;color:var(--muted);line-height:1.5;margin-bottom:11px}
+.btn-fb{background:var(--navy);color:#fff;border:none;padding:13px;border-radius:10px;font-size:13px;font-weight:700;font-family:'Noto Sans KR',sans-serif;cursor:pointer;width:100%;min-height:48px;touch-action:manipulation}
+.btn-fb:active{opacity:.85}
+
+/* ── DATA PHASE ── */
+.data-phase-banner{
+  display:flex;align-items:flex-start;gap:8px;
+  margin:0 14px 10px;padding:10px 12px;
+  background:linear-gradient(135deg,#eff6ff,#f0fdf4);
+  border:1px solid #bfdbfe;border-radius:12px;
+  font-size:11.5px;line-height:1.5;color:#1e3a5f;
+}
+.data-phase-banner b{font-weight:700;color:var(--navy)}
+.data-phase-ico{flex-shrink:0;font-size:15px;line-height:1.2}
+.food-pred-banner,.food-crowd-banner{
+  display:flex;align-items:flex-start;gap:8px;
+  margin:0 0 10px;padding:10px 12px;border-radius:12px;
+  font-size:11.5px;line-height:1.5;
+}
+.food-pred-banner{background:linear-gradient(135deg,#eff6ff,#f8fafc);border:1.5px solid #bfdbfe;color:#1e3a5f}
+.food-pred-banner--warn{background:linear-gradient(135deg,#fff7ed,#fef3c7);border-color:#fdba74;color:#9a3412}
+.food-pred-ico{flex-shrink:0;font-size:15px}
+.food-crowd-banner{background:#f0fdf4;border:1.5px solid #86efac;color:#166534;flex-direction:column}
+.food-crowd-banner .fcb-title{font-size:12.5px;font-weight:700;color:#166534;margin-bottom:2px}
+.food-crowd-banner .fcb-desc{font-size:11px;color:#15803d;margin:0 0 8px;line-height:1.45}
+.fcb-rest-row{display:flex;flex-wrap:wrap;gap:6px;width:100%;margin-bottom:8px}
+.fcb-rest-btn{padding:6px 10px;border-radius:16px;border:1.5px solid #86efac;background:#fff;font-size:11px;font-weight:700;color:#166534;cursor:pointer;font-family:'Noto Sans KR',sans-serif}
+.fcb-rest-btn.on{background:#166534;color:#fff;border-color:#166534}
+
+/* ── PRED CHIP ── */
+.pred-chip{display:inline-flex;align-items:center;gap:4px;background:#f0fdf4;border:1px solid #86efac;color:#166534;padding:5px 11px;border-radius:20px;font-size:10.5px;font-weight:700;margin-bottom:12px}
+.pred-chip--ref{background:#fff7ed;border-color:#fdba74;color:#9a3412}
+.gap-short-banner{background:#fff7ed;border:1.5px solid #fdba74;color:#9a3412;padding:10px 12px;border-radius:10px;font-size:12px;font-weight:700;margin-bottom:12px;text-align:center}
+
+/* ── SHUTTLE ── */
+.shc{border-radius:14px;margin-bottom:12px;display:none}
+.shc.on{display:block;animation:fu .28s ease}
+.sh-in{padding:13px 14px;border:1.5px solid transparent;border-radius:14px}
+.shc-ok .sh-in{background:var(--greend);border-color:#a7f3d0}
+.shc-warn .sh-in{background:var(--orad);border-color:#fdba74}
+.shc-bad .sh-in{background:var(--redd);border-color:#fca5a5}
+.shc-tip .sh-in{background:#eff6ff;border-color:#bfdbfe}
+.sh-hd{display:flex;align-items:center;justify-content:space-between;gap:7px;margin-bottom:6px}
+.sh-name{font-size:13.5px;font-weight:700;color:var(--text);flex:1}
+.sh-desc{font-size:12px;color:#374151;line-height:1.65}
+.cbar{margin-top:8px;height:5px;background:rgba(0,0,0,.07);border-radius:3px;overflow:hidden}
+.cfill{height:100%;border-radius:3px;width:0;transition:width .9s cubic-bezier(.4,0,.2,1)}
+.cf-g{background:var(--green)} .cf-o{background:var(--ora)} .cf-r{background:var(--red)}
+.clbl{font-size:10px;color:var(--muted);margin-top:3px;font-family:var(--mono)}
+.sh-upcoming{margin-top:10px;font-size:11.5px;color:var(--muted)}
+.sh-up-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed rgba(0,0,0,.06);font-size:12px}
+.sh-up-row.hl{background:rgba(37,99,235,.08);border-radius:6px;padding:6px 8px;margin:0 -4px;font-weight:700;color:var(--navy)}
+.sh-up-row.past{color:var(--sub);opacity:.85}
+.sh-past-lbl{font-size:10px;font-weight:700;color:var(--gray);white-space:nowrap}
+.sh-limit{margin-top:8px;font-size:11px;color:#b45309;line-height:1.5}
+.sh-route{font-size:12px;color:var(--text);line-height:1.6;margin-bottom:8px;padding:10px 12px;background:#fff;border:1.5px solid #c7d7ff;border-radius:10px;box-shadow:0 1px 4px rgba(12,36,97,.07)}
+.shc-bad .sh-route{border-color:#fca5a5}
+.shc-warn .sh-route{border-color:#fdba74}
+.shc-ok .sh-route{border-color:#86efac}
+.sh-route-row{margin-top:6px;display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap}
+.sh-route-row:first-child{margin-top:0}
+.sh-route-path{flex:1;min-width:0;line-height:1.6}
+.sh-route-stop{font-weight:600;color:#0f172a}
+.sh-route-arrow{font-weight:700;color:var(--blue);margin:0 3px}
+.sh-route-tag{display:inline-block;font-size:10px;font-weight:700;color:#fff;background:var(--navy);padding:3px 7px;border-radius:5px;margin-right:0;flex-shrink:0;line-height:1.35}
+.sched-route{font-size:11px;color:var(--text);margin-top:4px;line-height:1.55;font-weight:500}
+.sched-route .sh-route-stop{font-weight:600;color:#0f172a}
+.sched-route .sh-route-arrow{color:var(--blue);font-weight:700;margin:0 2px}
+.btn-sh-sched{width:100%;margin-top:10px;padding:10px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:12.5px;font-weight:700;color:var(--navy);cursor:pointer;font-family:'Noto Sans KR',sans-serif}
+.modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:400;display:none;align-items:flex-end;justify-content:center}
+.modal-ov.on{display:flex}
+.modal-sh{background:#fff;border-radius:20px 20px 0 0;width:100%;max-width:430px;max-height:85vh;overflow:hidden;display:flex;flex-direction:column}
+.modal-hd{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border)}
+.modal-ttl{font-size:15px;font-weight:700;color:var(--navy)}
+.modal-x{background:#f1f5fb;border:none;width:36px;height:36px;border-radius:50%;font-size:16px;cursor:pointer}
+.modal-tabs{display:flex;gap:6px;padding:10px 16px;border-bottom:1px solid var(--border)}
+.modal-tab{flex:1;padding:8px;border-radius:8px;border:none;background:#f1f5fb;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;font-family:'Noto Sans KR',sans-serif}
+.modal-tab.on{background:var(--navy);color:#fff}
+.modal-bd{padding:12px 16px calc(20px + env(safe-area-inset-bottom));overflow-y:auto;-webkit-overflow-scrolling:touch}
+.sched-row{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid #f0f4fb;font-size:12.5px;font-family:var(--mono)}
+.sched-row.past{color:var(--sub);text-decoration:line-through}
+.sched-row.next{color:var(--blue);font-weight:700;background:#eff6ff;border-radius:6px;padding:8px;margin:0 -4px}
+
+/* ── SUGGEST ── */
+.sg-hero{background:linear-gradient(135deg,var(--navy2),var(--navy));border-radius:14px;padding:17px;margin-bottom:15px;display:flex;align-items:flex-start;gap:12px}
+.sg-ico{font-size:24px;flex-shrink:0}
+.sg-title{font-size:14px;font-weight:700;color:#fff;margin-bottom:3px}
+.sg-desc{font-size:11px;color:#93b8e8;line-height:1.55}
+.stype-g{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:13px}
+.stype{padding:9px 13px;border-radius:22px;font-size:12.5px;font-weight:700;border:1.5px solid var(--border);background:#f8fafc;color:var(--muted);cursor:pointer;transition:.18s;user-select:none;min-height:44px;display:flex;align-items:center;touch-action:manipulation}
+.stype.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.ec{display:inline-block;background:#f1f5fb;border:1px solid var(--border);color:var(--muted);padding:7px 12px;border-radius:22px;font-size:11.5px;cursor:pointer;margin:0 6px 7px 0;min-height:36px;touch-action:manipulation}
+.ec:active{background:#e8effe;color:var(--navy)}
+.sg-ta{width:100%;padding:14px;border-radius:12px;border:1.5px solid var(--border);font-size:14px;font-family:'Noto Sans KR',sans-serif;color:var(--text);background:#f8fafc;resize:none;outline:none;line-height:1.65;min-height:120px}
+.sg-ta:focus{border-color:var(--blue);background:#fff}
+.sg-ta::placeholder{color:var(--sub)}
+.sg-cnt{text-align:right;font-size:11px;color:var(--sub);margin-top:5px;font-family:var(--mono)}
+.sg-sent{display:none;text-align:center;padding:28px 16px}
+.ss-ico{font-size:40px;margin-bottom:10px}
+.ss-title{font-size:16px;font-weight:700;color:var(--navy);margin-bottom:5px}
+.ss-desc{font-size:12.5px;color:var(--muted);line-height:1.65}
+.btn-again{margin-top:14px;background:#f1f5fb;border:1.5px solid var(--border);color:var(--navy);padding:13px;border-radius:12px;font-size:13px;font-weight:700;font-family:'Noto Sans KR',sans-serif;cursor:pointer;width:100%;min-height:48px}
+
+/* ── TOAST ── */
+.toast{position:fixed;bottom:calc(26px + max(env(safe-area-inset-bottom),0px));left:50%;transform:translateX(-50%) translateY(80px);background:var(--navy2);color:#fff;padding:11px 22px;border-radius:30px;font-size:13px;font-weight:600;font-family:'Noto Sans KR',sans-serif;z-index:9999;white-space:nowrap;box-shadow:0 6px 20px rgba(0,0,0,.25);transition:transform .28s cubic-bezier(.4,0,.2,1);max-width:90vw;text-align:center}
+.toast.on{transform:translateX(-50%) translateY(0)}
+
+/* ── 외부 식품 추천 ── */
+.alt-food{display:none;background:linear-gradient(135deg,#fff7ed,#ffedd5);border:1.5px solid #fdba74;border-radius:14px;padding:14px;margin-top:12px;margin-bottom:14px}
+.alt-food.on{display:block}
+.alt-ttl{font-size:13px;font-weight:700;color:#9a3412;margin-bottom:4px}
+.alt-why{font-size:11.5px;color:#b45309;line-height:1.55;margin-bottom:10px}
+.alt-links{display:flex;flex-direction:column;gap:7px}
+.alt-link{display:block;padding:10px 12px;background:#fff;border-radius:10px;font-size:12.5px;font-weight:600;color:var(--navy);text-decoration:none;border:1px solid #fed7aa}
+.alt-link:active{opacity:.85}
+.sg-email{width:100%;padding:12px 13px;border-radius:10px;border:1.5px solid var(--border);font-size:13px;margin-bottom:10px;font-family:'Noto Sans KR',sans-serif}
+</style>
+</head>
+<body>
+
+<!-- 간단 설정: 첫 실행 시 자동 표시 · ⚙️설정과 동일 -->
+<div class="ob-ov" id="obOv" style="display:none">
+  <div class="ob-sh" id="obSheet">
+    <div class="ob-hd">
+      <div class="ob-ico">🧠</div>
+      <div class="ob-title">간단 설정</div>
+      <div class="ob-sub">취향·거주만 고르면 식당 순위가 바뀝니다</div>
+    </div>
+    <div class="ob-bd">
+      <div class="ob-sec">
+        <div class="ob-stitle">🍽️ 오늘 땡기는 음식</div>
+        <div class="chips" id="tasteG">
+          <div class="chip chip-taste" data-v="한식" onclick="togChip(this,'t')">🍚 한식</div>
+          <div class="chip chip-taste" data-v="중식" onclick="togChip(this,'t')">🥟 중식</div>
+          <div class="chip chip-taste" data-v="일식" onclick="togChip(this,'t')">🍣 일식</div>
+          <div class="chip chip-taste" data-v="양식" onclick="togChip(this,'t')">🍝 양식</div>
+        </div>
+      </div>
+      <div class="ob-sec">
+        <div class="ob-stitle">🏠 거주</div>
+        <div class="chips" id="homeG">
+          <div class="chip chip-home" data-v="기흥역행" onclick="togChip(this,'h')">🚌 기흥역행</div>
+          <div class="chip chip-home" data-v="시내행" onclick="togChip(this,'h')">🚍 시내행</div>
+          <div class="chip chip-home" data-v="기숙사생" onclick="togChip(this,'h')">🏠 기숙사생</div>
+        </div>
+      </div>
+      <button type="button" class="btn-ob" id="obSubmitBtn" onclick="doneOb()">시작하기 →</button>
+    </div>
+  </div>
+</div>
+<!-- MAIN APP -->
+<div class="shell">
+
+  <div class="hdr">
+    <div class="hdr-in">
+      <div class="hdr-row">
+        <div class="hdr-brand">
+          <div class="hdr-ico">🧠</div>
+          <div>
+            <div class="hdr-name">명비서<span class="hdr-v">AI</span></div>
+            <div class="hdr-sub">명지대 자연캠퍼스 · 초개인화 AI</div>
+          </div>
+        </div>
+        <div class="hdr-wx">
+          <span class="hdr-wxico" id="wIco">☁️</span>
+          <span id="wLbl">확인중</span>
+        </div>
+      </div>
+      <div class="now-chip"><div class="pdot"></div><span id="nowTime">로딩중...</span></div>
+      <div class="hdr-prof">
+        <div style="flex:1;min-width:0">
+          <div class="hp-name">안녕하세요, <b id="hpName">주인님</b></div>
+          <div class="hdr-taste-chips" id="hpTasteChips"></div>
+        </div>
+        <div class="hdr-prof-side">
+          <div class="hp-home" id="hpHome">거주 미설정</div>
+          <button type="button" class="hdr-set-btn" onclick="openSettings()">⚙️ 설정</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="day-bar">
+    <div class="day-tog">
+      <button class="day-btn on" id="btnToday" onclick="setDay('today')">오늘 (실시간)</button>
+      <button class="day-btn"    id="btnTmrw"  onclick="setDay('tomorrow')">내일 (예측)</button>
+    </div>
+  </div>
+
+  <div class="data-phase-banner" role="note">
+    <span class="data-phase-ico" aria-hidden="true">📊</span>
+    <span><b>데이터 수집 중</b> — 방문 기록·시간표가 쌓일수록 추천·혼잡 안내가 정확해집니다. 지금은 참고용 예측입니다.</span>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <div class="tb on" onclick="goTab('tt',this)">📅<br>시간표</div>
+    <div class="tb"    onclick="goTab('food',this)">🍽️<br>식당</div>
+    <div class="tb"    onclick="goTab('shuttle',this)">🚌<br>셔틀</div>
+    <div class="tb"    onclick="goTab('suggest',this)">💬<br>건의함</div>
+    <div class="tb-ink" id="tbInk"></div>
+  </div>
+
+  <div class="content">
+
+    <!-- ═══ 시간표 탭 ═══ -->
+    <div class="pane on" id="pane-tt">
+      <div class="mtog">
+        <button class="mb on" id="mMan" onclick="setMd('manual')">✏️ 수동 입력 (즉시)</button>
+        <button class="mb" id="mSaved" onclick="setMd('saved')">📅 저장 시간표</button>
+        <button class="mb" id="mImg" onclick="setMd('img')">📸 이미지 + AI</button>
+      </div>
+      <p class="tt-hint" id="ttHint" style="font-size:11px;color:var(--sub);margin:0 0 10px;line-height:1.45"></p>
+      <div id="ttOffBanner" class="tt-off-banner" style="display:none" role="status"></div>
+
+      <!-- 수동 입력 -->
+      <div id="manMode">
+        <div class="fld">
+          <label>방금 종료된 수업 위치</label>
+          <select id="mCur"></select>
+        </div>
+        <div class="fld">
+          <label>다음 수업 위치</label>
+          <select id="mNext"></select>
+        </div>
+        <div class="fld">
+          <label>공강 시간</label>
+          <select id="mGap">
+            <option value="45">45분 미만</option>
+            <option value="75" selected>1시간 ~ 1시간 30분</option>
+            <option value="120">2시간 이상 (여유)</option>
+          </select>
+        </div>
+        <button class="btnm" onclick="doAnalyze()">🤖 분석하기</button>
+      </div>
+
+      <!-- 저장된 시간표 -->
+      <div id="savedMode" style="display:none">
+        <div class="saved-tt-box" id="savedTtSummary">저장된 시간표가 없습니다.</div>
+        <button class="btnm" type="button" onclick="doAnalyzeFromTimetable()">📅 저장된 시간표로 지금 분석</button>
+        <button class="btn-ghost" type="button" onclick="fillManualFromTimetable()" style="margin-top:8px">✏️ 수동 입력에 자동 채우기</button>
+      </div>
+
+      <!-- 이미지 + AI -->
+      <div id="imgMode" style="display:none">
+        <div class="upzone" id="upzone" onclick="document.getElementById('fi').click()">
+          <img id="upPrev" class="up-prev" alt="">
+          <span class="up-ico" id="upIco">📲</span>
+          <div class="up-ttl" id="upTtl">에브리타임 시간표 캡처 업로드</div>
+          <div class="up-hint" id="upHint">탭하여 선택</div>
+          <input type="file" id="fi" accept="image/*" onchange="handleFile(event)">
+        </div>
+        <button class="btnm" id="btnImg" onclick="doAnalyzeImg()" disabled style="margin-top:10px">🤖 AI OCR 분석</button>
+      </div>
+
+      <div class="ldg" id="ldg">
+        <div class="dots"><span></span><span></span><span></span></div>
+        <span id="ldgMsg">분석 중...</span>
+      </div>
+
+      <div class="sch-bd" id="schBd">
+        <div class="sb-title">📋 분석된 스케줄</div>
+        <div id="sbRows"></div>
+        <div id="ttTimeline" class="tt-timeline"></div>
+        <div class="t-alert" id="tAlert"></div>
+      </div>
+      <div class="ai-box" id="aiBox">
+        <div class="ai-lbl">🤖 AI 코멘트</div>
+        <div id="aiTxt"></div>
+      </div>
+    </div>
+
+    <!-- ═══ 식당 탭 ═══ -->
+    <div class="pane" id="pane-food">
+      <div id="foodRes">
+        <div class="meal-tog">
+          <button class="meal-btn on" id="mLunch" onclick="setMeal('lunch')">☀️ 점심 식단</button>
+          <button class="meal-btn"    id="mDinner" onclick="setMeal('dinner')">🌙 저녁 식단</button>
+        </div>
+        <div id="dayChip"></div>
+        <div class="mtog" style="margin-bottom:12px">
+          <button class="mb on" id="rBal" onclick="setRank('balance')">⚖️ 균형</button>
+          <button class="mb" id="rDist" onclick="setRank('distance')">📍 거리·왕복</button>
+          <button class="mb" id="rFood" onclick="setRank('food')">🍽️ 음식·취향</button>
+        </div>
+        <div class="slbl" id="foodRankLbl">교내 4대 식당 — 균형 추천 순위</div>
+        <div id="rcWrap"></div>
+        <div id="deliveryWrap"></div>
+        <div id="altFood" class="alt-food"></div>
+        <div class="fb" id="fbBox">
+          <div class="fb-title">📍 방문 후 기록하기</div>
+          <div class="fb-desc">추천 식당에 다녀오셨나요?<br>기록이 쌓일수록 다음 추천·혼잡 안내가 정확해집니다 (데이터 수집에 도움이 됩니다)</div>
+          <button class="btn-fb" id="fbBtn" onclick="recVisit()">✅ 방문 완료 기록</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 셔틀 탭 ═══ -->
+    <div class="pane" id="pane-shuttle">
+      <div id="shRes">
+        <div class="slbl">실시간 셔틀 · <span id="shKstNow">KST</span></div>
+        <div id="shGiheung"></div>
+        <div id="shEntrance"></div>
+        <div id="shSinae"></div>
+      </div>
+    </div>
+
+    <!-- ═══ 건의함 탭 ═══ -->
+    <div class="pane" id="pane-suggest">
+      <div class="sg-hero">
+        <div class="sg-ico">📬</div>
+        <div>
+          <div class="sg-title">개발팀에게 직접 전달됩니다</div>
+          <div class="sg-desc">불편한 점, 원하는 기능, 식당·셔틀 정보 오류 — 뭐든 말씀해 주세요.</div>
+        </div>
+      </div>
+      <div class="sg-sent" id="sgSent">
+        <div class="ss-ico">✅</div>
+        <div class="ss-title">개발팀에 전달됐어요!</div>
+        <div class="ss-desc">소중한 의견 감사해요.<br>다음 업데이트에 반영하겠습니다.</div>
+        <button class="btn-again" onclick="resetSg()">다른 건의 작성하기</button>
+      </div>
+      <div id="sgForm">
+        <div class="slbl">유형 선택</div>
+        <div class="stype-g">
+          <div class="stype on" data-type="기능 요청" onclick="selSt(this)">✨ 기능 요청</div>
+          <div class="stype" data-type="버그 신고" onclick="selSt(this)">🐛 버그 신고</div>
+          <div class="stype" data-type="식당 오류" onclick="selSt(this)">🍽️ 식당 오류</div>
+          <div class="stype" data-type="셔틀 오류" onclick="selSt(this)">🚌 셔틀 오류</div>
+          <div class="stype" data-type="기타" onclick="selSt(this)">💬 기타</div>
+        </div>
+        <div class="slbl">예시 클릭으로 빠르게 입력</div>
+        <div>
+          <div class="ec" onclick="fillEg(this)">"명진당 오늘 메뉴가 달라요"</div>
+          <div class="ec" onclick="fillEg(this)">"셔틀 실시간 위치 기능 원해요"</div>
+          <div class="ec" onclick="fillEg(this)">"교직원 식당 요금도 넣어주세요"</div>
+          <div class="ec" onclick="fillEg(this)">"저녁 식당 더 추가해주세요"</div>
+        </div>
+        <div class="slbl">내용 작성</div>
+        <input class="sg-email" id="sgEmail" type="email" placeholder="회신 받을 이메일 (선택)">
+        <textarea class="sg-ta" id="sgTa" placeholder="어떤 기능이 있었으면 하나요? 불편한 점이 있으신가요?" maxlength="500" oninput="updCnt()"></textarea>
+        <div class="sg-cnt"><span id="sCnt">0</span> / 500</div>
+        <button class="btnm" onclick="submitSg()" style="margin-top:12px">📬 개발팀에 전송하기</button>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /shell -->
+<div class="modal-ov" id="shModal" onclick="if(event.target===this)closeShuttleModal()">
+  <div class="modal-sh">
+    <div class="modal-hd">
+      <span class="modal-ttl" id="shModalTitle">셔틀 전체 시간표</span>
+      <button type="button" class="modal-x" onclick="closeShuttleModal()" aria-label="닫기">✕</button>
+    </div>
+    <div class="modal-tabs" id="shModalTabs"></div>
+    <div class="modal-bd" id="shModalBody"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+  window.__BETA_MOCK_TIME__ = '2026-05-20T13:00:00+09:00';
+</script>
+<script type="module" src="/analytics-sync.js?v=20260523-dash1"></script>
+<script src="/utils.js?v=20260522-fix3"></script>
+<script src="/kst.js?v=20260523-beta1" defer></script>
+<script src="/schoolCalendar.js?v=20260522-fix3" defer></script>
+<script src="/campusDistance.js?v=20260523-rank4" defer></script>
+<script src="/timetable.js?v=20260522-fix3" defer></script>
+<script src="/mealEngine.js?v=20260522-fix3" defer></script>
+<script src="/app.js?v=20260523-card1" defer></script>
+<script src="/pwa-register.js?v=20260522-fix2" defer></script>
+</body>
+</html>
