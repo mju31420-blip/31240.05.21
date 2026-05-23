@@ -3,6 +3,33 @@
  */
 window.USER_TIMETABLE = [];
 
+/** 구버전에 번들된 개발자 샘플 시간표(16과목) — localStorage에 남아 있으면 제거 */
+const LEGACY_DEV_SAMPLE_NAMES = [
+  '환경과인간',
+  '디지털논리회로',
+  '전자기학',
+  '회로이론',
+  '채플',
+  '전기회로실험1',
+  'C언어',
+  '디지털논리회로실험',
+];
+
+function isLegacyDevSampleTimetable(classes) {
+  if (!Array.isArray(classes) || classes.length !== 16) return false;
+  const names = new Set(classes.map((c) => c?.name).filter(Boolean));
+  return LEGACY_DEV_SAMPLE_NAMES.every((n) => names.has(n));
+}
+
+function purgeLegacyDevSampleFromStorage() {
+  try {
+    localStorage.removeItem('myeong_timetable');
+  } catch (e) {
+    console.warn('[timetable] purge legacy sample', e);
+  }
+  window.USER_TIMETABLE = [];
+}
+
 /** 수동 입력·OCR 공통 캠퍼스 건물 (표시 순) */
 const CAMPUS_BUILDINGS = [
   { key: '1공', label: '제1공학관' },
@@ -98,6 +125,10 @@ function loadUserTimetable() {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
+        if (isLegacyDevSampleTimetable(parsed)) {
+          purgeLegacyDevSampleFromStorage();
+          return window.USER_TIMETABLE;
+        }
         window.USER_TIMETABLE = parsed;
         return parsed;
       }
