@@ -3,7 +3,7 @@
  * 출처: 캠퍼스 동선 기준 추정 (실측 데이터로 교체 가능)
  */
 window.CampusDistance = (function () {
-  const EAT_MIN = 15;
+  const EAT_MIN = 20;
 
   /** 수업 건물 → 식당 (편도 분) */
   const TO_REST = {
@@ -73,60 +73,183 @@ window.CampusDistance = (function () {
     };
   }
 
-  /**
-   * 순위 모드별 가중치 (합 ≈ 1)
-   * - distance: 왕복·도보 우선 (공강 짧을 때와 동일 계열)
-   * - food: 오늘 식단 취향 매칭 우선
-   * - balance: 공강·왕복이 여유면 취향 비중 ↑, 짧으면 거리 비중 ↑
-   */
-  function rankWeights(mode, gapMin, totalTime) {
+  /** 공강이 짧을수록 1(거리·대기 우선), 길수록 0(취향 우선) */
+  function gapPressure(gapMin) {
     const gap = gapMin ?? 75;
-    if (mode === 'distance') return { wTime: 0.78, wWait: 0.17, wMatch: 0.05, label: '거리·왕복' };
-    if (mode === 'food') return { wTime: 0.1, wWait: 0.08, wMatch: 0.82, label: '음식·취향' };
-    if (gap < 50) return { wTime: 0.62, wWait: 0.18, wMatch: 0.2, label: '균형(공강 짧음→거리)' };
-    if (gap >= 90 && totalTime <= 38) return { wTime: 0.26, wWait: 0.12, wMatch: 0.62, label: '균형(여유→취향)' };
-    return { wTime: 0.4, wWait: 0.2, wMatch: 0.4, label: '균형' };
+    if (gap <= 42) return 1;
+    if (gap >= 98) return 0;
+    return (98 - gap) / (98 - 42);
   }
 
-  function scoreRestaurant({ fromKey, nextKey, gapMin, restaurantKey, waitMin, matchCount, mode, status }) {
-    if (status === 'closed') return { score: -9999, parts: null };
+  /**
+   * 순위 모드별 가중치 (합 ≈ 1)
+   * - distance / food: 고정
+   * - balance: 공강 길이만으로 결정 (식당별 totalTime에 따라 달라지지 않음 → 공정 비교)
+   */
+  function rankWeights(mode, gapMin, period) {
+    if (period === 'dinner') {
+      if (mode === 'distance') return { wTime: 0.88, wWait: 0.04, wMatch: 0.08, label: '거리·왕복' };
+      if (mode === 'food') return { wTime: 0.2, wWait: 0.04, wMatch: 0.76, label: '음식·취향' };
+      return { wTime: 0.55, wWait: 0.04, wMatch: 0.41, label: '균형' };
+    }
+    if (mode === 'distance') return { wTime: 0.76, wWait: 0.18, wMatch: 0.06, label: '거리·왕복' };
+    if (mode === 'food') return { wTime: 0.1, wWait: 0.08, wMatch: 0.82, label: '음식·취향' };
+
+    const p = gapPressure(gapMin);
+    const wTime = 0.24 + 0.5 * p;
+    const wWait = 0.12 + 0.1 * p;
+    const wMatch = Math.max(0.08, 1 - wTime - wWait);
+    const label = p >= 0.82 ? '균형(공강 짧음→거리)' : p <= 0.18 ? '균형(여유→취향)' : '균형';
+    return { wTime, wWait, wMatch, label };
+  }
+
+  /** 운영 종료만 (오픈 전·내일 예정·운영 중은 순위 대상) */
+  function isClosedEntry(entry) {
+    return entry.cardState === 'closed' || entry.closed === true || entry.status === 'closed';
+  }
+
+  /** 0=추천 가능, 1=시간 부족, 2=영업 종료 */
+  function rankTier(entry) {
+    if (isClosedEntry(entry)) return 2;
+    const margin = entry.margin;
+    if (typeof margin === 'number' && margin < 0) return 1;
+    if (entry.infeasible) return 1;
+    return 0;
+  }
+
+  /**
+   * 왕복·공강 여유를 반영한 시간 점수 (0~100)
+   * margin < 0 이면 강한 감점, 여유가 있으면 소폭 가산
+   */
+  function timeScoreFromTrip(totalTime, gapMin) {
+    const gap = gapMin ?? 75;
+    const margin = gap - totalTime;
+    if (margin < 0) return Math.max(0, 22 + margin * 2.2);
+    const base = Math.max(0, 100 - totalTime * 1.42);
+    const bufferBonus = Math.min(16, margin * 0.5);
+    return Math.min(100, base + bufferBonus);
+  }
+
+  function visitWeight(restaurantKey) {
+    try {
+      const stored = JSON.parse(localStorage.getItem('restaurant_weights') || '{}');
+      const w = stored[restaurantKey];
+      if (typeof w !== 'number' || !Number.isFinite(w)) return 1;
+      return Math.min(1.08, Math.max(0.92, w));
+    } catch (e) {
+      return 1;
+    }
+  }
+
+  function scoreRestaurant({
+    fromKey,
+    nextKey,
+    gapMin,
+    restaurantKey,
+    waitMin,
+    matchCount,
+    mode,
+    period,
+    status,
+  }) {
+    if (status === 'closed') {
+      return { score: 0, closed: true, tier: 2, infeasible: false, parts: null };
+    }
 
     const walk = walkToRest(fromKey, restaurantKey);
     const back = nextKey === 'none' || !nextKey ? 0 : walkRestToBuilding(restaurantKey, nextKey);
     const totalTime = walk + (waitMin || 0) + EAT_MIN + back;
-    const timeScore = Math.max(0, 100 - totalTime * 1.5);
+    const margin = (gapMin ?? 75) - totalTime;
+    const infeasible = margin < 0;
+
+    const timeScore = timeScoreFromTrip(totalTime, gapMin);
     const waitScore = Math.max(0, 100 - (waitMin || 0) * 2.5);
     const cuisineScore = Math.min(100, Math.max(0, typeof matchCount === 'number' ? matchCount : 0));
 
-    const weights = rankWeights(mode, gapMin, totalTime);
+    const weights = rankWeights(mode, gapMin, period);
 
-    let visitW = 1.0;
-    try {
-      const stored = JSON.parse(localStorage.getItem('restaurant_weights') || '{}');
-      visitW = stored[restaurantKey] || 1.0;
-    } catch (e) {
-      /* ignore */
-    }
-
-    const statusMul = status === 'bad' ? 0.4 : status === 'warn' ? 0.88 : 1;
+    const statusMul = status === 'bad' ? 0.42 : status === 'warn' ? 0.9 : 1;
+    const feasibilityMul = infeasible ? 0.35 : 1;
     const raw =
       timeScore * weights.wTime + waitScore * weights.wWait + cuisineScore * weights.wMatch;
-    const score = Math.round(raw * visitW * statusMul);
+    const score = Math.round(raw * visitWeight(restaurantKey) * statusMul * feasibilityMul);
 
     return {
       score: score || 0,
+      closed: false,
+      tier: infeasible ? 1 : 0,
+      infeasible,
+      margin,
+      totalTime,
       parts: {
         walk,
         back,
         totalTime,
+        margin,
         timeScore: Math.round(timeScore),
         waitScore: Math.round(waitScore),
         cuisineScore: Math.round(cuisineScore),
         weights,
         statusMul,
-        visitW,
+        feasibilityMul,
+        visitW: visitWeight(restaurantKey),
       },
     };
+  }
+
+  /**
+   * 카드 순서만 모드별로 다르게 (배너·UI 문구와 무관)
+   * - distance: 식당까지 도보(편도) → 왕복 총시간 → 대기
+   * - food: 오늘 취향 점수 → 음식 모드 종합점수
+   * - balance: 공강 반영 종합점수 → 여유(margin) → 왕복
+   */
+  function compareRestaurants(a, b, mode, period) {
+    const cA = isClosedEntry(a);
+    const cB = isClosedEntry(b);
+    if (cA !== cB) return cA ? 1 : -1;
+    if (cA && cB) {
+      return (a.restaurantKey || a.key || '').localeCompare(b.restaurantKey || b.key || '', 'ko');
+    }
+
+    const tierA = rankTier(a);
+    const tierB = rankTier(b);
+    if (tierA !== tierB) return tierA - tierB;
+
+    const m = mode || 'balance';
+    const mealPeriod = period || 'lunch';
+    const walkA = a.walk ?? 999;
+    const walkB = b.walk ?? 999;
+    const waitA = a.wait ?? 999;
+    const waitB = b.wait ?? 999;
+    const totalA = a.total ?? a.totalTime ?? 999;
+    const totalB = b.total ?? b.totalTime ?? 999;
+    const tasteA = a.tasteScore ?? a.cuisineScore ?? 0;
+    const tasteB = b.tasteScore ?? b.cuisineScore ?? 0;
+    const marginA = typeof a.margin === 'number' ? a.margin : -999;
+    const marginB = typeof b.margin === 'number' ? b.margin : -999;
+
+    if (mealPeriod === 'dinner') {
+      if (m === 'food' && tasteB !== tasteA) return tasteB - tasteA;
+      if (walkA !== walkB) return walkA - walkB;
+      if (totalA !== totalB) return totalA - totalB;
+      return (a.restaurantKey || a.key || '').localeCompare(b.restaurantKey || b.key || '', 'ko');
+    }
+    if (m === 'distance') {
+      if (walkA !== walkB) return walkA - walkB;
+      if (totalA !== totalB) return totalA - totalB;
+      if (waitA !== waitB) return waitA - waitB;
+      return b.score - a.score;
+    }
+    if (m === 'food') {
+      if (tasteB !== tasteA) return tasteB - tasteA;
+      if (b.score !== a.score) return b.score - a.score;
+      if (walkA !== walkB) return walkA - walkB;
+      return totalA - totalB;
+    }
+    if (b.score !== a.score) return b.score - a.score;
+    if (marginB !== marginA) return marginB - marginA;
+    if (totalA !== totalB) return totalA - totalB;
+    return (a.restaurantKey || a.key || '').localeCompare(b.restaurantKey || b.key || '', 'ko');
   }
 
   return {
@@ -138,7 +261,11 @@ window.CampusDistance = (function () {
     walkB2B,
     walkRestToBuilding,
     planRoundTrip,
+    gapPressure,
     rankWeights,
+    isClosedEntry,
+    rankTier,
+    compareRestaurants,
     scoreRestaurant,
   };
 })();
