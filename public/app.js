@@ -17,10 +17,50 @@ function getOrCreateUid() {
   }
 }
 
-async function persistAnalysisSession(curKey, nextKey, gapMin) {
-  if (typeof window.saveSessionToFirestore !== 'function') return;
+let _mbFirestoreApi = null;
+
+async function getMbFirestoreApi() {
+  if (_mbFirestoreApi) return _mbFirestoreApi;
+  const [{ initializeApp, getApps }, fs] = await Promise.all([
+    import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'),
+    import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'),
+  ]);
+  let firebaseConfig = { projectId: 'myeong-biseo-v2' };
   try {
-    const sessionId = await window.saveSessionToFirestore({
+    const res = await fetch('/__/firebase/init.json');
+    if (res.ok) firebaseConfig = await res.json();
+  } catch {
+    /* Hosting 배포 환경에서만 init.json 제공 */
+  }
+  const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+  _mbFirestoreApi = { db: fs.getFirestore(app), ...fs };
+  return _mbFirestoreApi;
+}
+
+/** 동일 uid 세션은 갱신, 없을 때만 추가 */
+async function saveSessionByUid(data) {
+  const { db, collection, query, where, limit, getDocs, doc, updateDoc, addDoc } = await getMbFirestoreApi();
+  const payload = {
+    uid: data.uid,
+    buildings: data.buildings || [],
+    gapMin: data.gapMin ?? 0,
+    timestamp: data.timestamp || new Date(),
+    visited: !!data.visited,
+  };
+  const q = query(collection(db, 'sessions'), where('uid', '==', data.uid), limit(1));
+  const snap = await getDocs(q);
+  if (!snap.empty) {
+    const existingId = snap.docs[0].id;
+    await updateDoc(doc(db, 'sessions', existingId), payload);
+    return existingId;
+  }
+  const ref = await addDoc(collection(db, 'sessions'), payload);
+  return ref.id;
+}
+
+async function persistAnalysisSession(curKey, nextKey, gapMin) {
+  try {
+    const sessionId = await saveSessionByUid({
       uid: getOrCreateUid(),
       buildings: [curKey, nextKey].filter((b) => b && b !== 'none'),
       gapMin,
@@ -38,6 +78,26 @@ async function persistAnalysisSession(curKey, nextKey, gapMin) {
     console.warn('Firestore session 저장 실패', e);
   }
 }
+
+window.upsertTimetableSession = async (classes) => {
+  if (typeof TimetableUtil === 'undefined') return;
+  const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
+  const snap = TimetableUtil.analyzeFromClasses(classes, ref);
+  const sessionId = await saveSessionByUid({
+    uid: getOrCreateUid(),
+    buildings: [snap.curKey, snap.nextKey].filter((b) => b && b !== 'none'),
+    gapMin: snap.gapMin,
+    timestamp: new Date(),
+    visited: false,
+  });
+  if (sessionId) {
+    try {
+      localStorage.setItem(MB_LAST_SESSION_KEY, sessionId);
+    } catch (e) {
+      console.warn('session id save', e);
+    }
+  }
+};
 
 async function markCurrentSessionVisited() {
   let sessionId = null;
@@ -553,8 +613,7 @@ function persistOcrClasses(apiClasses) {
   const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
   const normalized = TimetableUtil.normalizeClassesFromAi(apiClasses, ref.getDay());
   if (!normalized.length) return;
-  const merged = TimetableUtil.mergeTimetableClasses(TimetableUtil.loadUserTimetable(), normalized);
-  TimetableUtil.saveUserTimetable(merged);
+  TimetableUtil.saveUserTimetable(normalized);
   updateSavedTimetableUi();
 }
 
@@ -566,7 +625,7 @@ function refineScheduleAnalysis(api = {}) {
   if (typeof TimetableUtil !== 'undefined') {
     const fromApi = TimetableUtil.normalizeClassesFromAi(api.classes || [], ref.getDay());
     if (fromApi.length) {
-      classes = TimetableUtil.mergeTimetableClasses(TimetableUtil.loadUserTimetable(), fromApi);
+      classes = fromApi;
       TimetableUtil.saveUserTimetable(classes);
     } else {
       classes = TimetableUtil.loadUserTimetable();

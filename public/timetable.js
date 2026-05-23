@@ -125,12 +125,30 @@ function loadUserTimetable() {
 }
 
 function saveUserTimetable(classes) {
-  if (!Array.isArray(classes) || !classes.length) return;
+  if (!Array.isArray(classes)) return;
   window.USER_TIMETABLE = classes;
   try {
-    localStorage.setItem('myeong_timetable', JSON.stringify(classes));
+    localStorage.removeItem('myeong_timetable');
+    if (classes.length) {
+      localStorage.setItem('myeong_timetable', JSON.stringify(classes));
+    }
   } catch (e) {
     console.warn('[timetable] save', e);
+  }
+  if (classes.length) void syncTimetableSession(classes);
+}
+
+/** 기존 시간표를 버리고 새 목록으로만 저장 (누적·병합 없음) */
+function replaceUserTimetable(classes) {
+  saveUserTimetable(classes);
+}
+
+async function syncTimetableSession(classes) {
+  if (typeof window.upsertTimetableSession !== 'function') return;
+  try {
+    await window.upsertTimetableSession(classes);
+  } catch (e) {
+    console.warn('[timetable] Firestore session', e);
   }
 }
 
@@ -353,6 +371,7 @@ window.TimetableUtil = {
   ROOM_PREFIX_MAP,
   loadUserTimetable,
   saveUserTimetable,
+  replaceUserTimetable,
   mergeTimetableClasses,
   normalizeClass,
   normalizeClassesFromAi,
