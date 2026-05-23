@@ -312,9 +312,146 @@ let CAMPUS_SCHEDULE = null;
 /** 개인 시간표로 혼잡도 전환하기 전 최소 집계 수 (추후 Firestore 연동) */
 const TIMETABLE_CROWD_MIN_POOL = 1000;
 
+/** 수업 종료 → 식당 도착 예측: 현재 시각 기준 집계 구간 (분) */
+const CROWD_ARRIVAL_WINDOW = { beforeMin: 5, afterMin: 15 };
+
+/** campus_schedule 건물 키 → 도보 시간표 키 */
+const SCHEDULE_BUILDING_WALK_ALIAS = { '2공': '제2공학관' };
+
+/** 건물→식당 도보(분, 짐 챙기기 2분 포함) */
+const CAFETERIA_WALK_TO_REST = {
+  기숙사: {
+    '3공': 9,
+    '5공': 6,
+    자연: 5,
+    채플관: 4,
+    창조관: 6,
+    체육관: 7,
+    체육문화관: 7,
+    학군단: 6,
+    선수숙소: 8,
+    명진당: 7,
+    차세대학과관: 8,
+    디자인조형센터: 10,
+    제4공학관: 10,
+    건축도시설계원: 9,
+    학생: 5,
+    제2공학관: 8,
+    '2공': 8,
+    하이브리드구조실험센터: 8,
+    산업협력관: 9,
+    '1공': 4,
+  },
+  명진당: {
+    '3공': 7,
+    '5공': 3,
+    자연: 4,
+    채플관: 5,
+    창조관: 5,
+    체육관: 5,
+    체육문화관: 5,
+    학군단: 5,
+    선수숙소: 7,
+    명진당: 3,
+    차세대학과관: 4,
+    디자인조형센터: 6,
+    제4공학관: 7,
+    건축도시설계원: 5,
+    학생: 4,
+    제2공학관: 4,
+    '2공': 4,
+    하이브리드구조실험센터: 4,
+    산업협력관: 4,
+    '1공': 4,
+  },
+  교직원: {
+    '3공': 6,
+    '5공': 3,
+    자연: 4,
+    채플관: 5,
+    창조관: 5,
+    체육관: 5,
+    체육문화관: 5,
+    학군단: 5,
+    선수숙소: 7,
+    명진당: 3,
+    차세대학과관: 4,
+    디자인조형센터: 6,
+    제4공학관: 7,
+    건축도시설계원: 5,
+    학생: 3,
+    제2공학관: 4,
+    '2공': 4,
+    하이브리드구조실험센터: 4,
+    산업협력관: 5,
+    '1공': 4,
+  },
+  학생회관: {
+    '3공': 9,
+    '5공': 3,
+    자연: 4,
+    채플관: 4,
+    창조관: 4,
+    체육관: 5,
+    체육문화관: 4,
+    학군단: 5,
+    선수숙소: 6,
+    명진당: 4,
+    차세대학과관: 5,
+    디자인조형센터: 8,
+    제4공학관: 9,
+    건축도시설계원: 6,
+    학생: 3,
+    제2공학관: 6,
+    '2공': 6,
+    하이브리드구조실험센터: 4,
+    산업협력관: 6,
+    '1공': 3,
+  },
+};
+
+function scheduleTimeKeyToMinutes(timeKey) {
+  const [h, m] = String(timeKey).split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+function getWalkMinToRestaurant(restaurantKey, buildingKey) {
+  const walkMap = CAFETERIA_WALK_TO_REST[restaurantKey];
+  if (!walkMap) return null;
+  const walkKey = SCHEDULE_BUILDING_WALK_ALIAS[buildingKey] || buildingKey;
+  return walkMap[walkKey] ?? walkMap[buildingKey] ?? null;
+}
+
+/** campus_schedule: 종료 시각+도보 → 도착 시각이 [now-5분, now+15분]인 학생 수 합 */
+function countScheduleArrivalsAtRestaurant(restaurantKey, refDate) {
+  const dow = refDate.getDay();
+  const daySchedule = CAMPUS_SCHEDULE?.[dow];
+  if (!daySchedule || typeof daySchedule !== 'object') return 0;
+
+  const nowMin = refDate.getHours() * 60 + refDate.getMinutes();
+  const winStart = nowMin - CROWD_ARRIVAL_WINDOW.beforeMin;
+  const winEnd = nowMin + CROWD_ARRIVAL_WINDOW.afterMin;
+  let total = 0;
+
+  for (const [timeKey, buildings] of Object.entries(daySchedule)) {
+    const endMin = scheduleTimeKeyToMinutes(timeKey);
+    if (endMin == null || !buildings || typeof buildings !== 'object') continue;
+    for (const [bldg, count] of Object.entries(buildings)) {
+      const n = Number(count);
+      if (!n) continue;
+      const walkMin = getWalkMinToRestaurant(restaurantKey, bldg);
+      if (walkMin == null) continue;
+      const arrivalMin = endMin + walkMin;
+      if (arrivalMin >= winStart && arrivalMin <= winEnd) total += n;
+    }
+  }
+  return total;
+}
+
 /**
  * [혼잡도 예측 — campus_schedule.json 우선]
- * 강의 스케줄(학기 시간표 집계) + 방문 피드백으로 식당 혼잡도를 추정합니다.
+ * 강의 종료 시각 + 건물별 식당 도보 시간으로 도착 예상 인원을 집계합니다.
  * 개인 OCR 시간표는 공강·요일·동선 분석에만 쓰고, 혼잡도는 pool ≥ 1000 이후 전환.
  */
 async function loadCampusSchedule() {
@@ -359,16 +496,8 @@ function getDynamicCrowd(restaurantKey) {
     const ttBonus = getTimetableCrowdBonus(restaurantKey, now, timeFloat, NEARBY);
     if (ttBonus != null) crowdBonus = ttBonus;
   } else if (CAMPUS_SCHEDULE && CAMPUS_SCHEDULE[dow]) {
-    Object.entries(CAMPUS_SCHEDULE[dow]).forEach(([timeKey, buildings]) => {
-      const [h, m] = timeKey.split(':').map(Number);
-      const endFloat = h + m / 60;
-      const diff = timeFloat - endFloat;
-      if (diff >= -0.17 && diff <= 0.33) {
-        (NEARBY[restaurantKey] || []).forEach((b) => {
-          crowdBonus += (buildings[b] || 0) * 0.02;
-        });
-      }
-    });
+    const arriving = countScheduleArrivalsAtRestaurant(restaurantKey, now);
+    crowdBonus = arriving * 0.02;
   }
 
   // 사용자 피드백이 쌓일수록 아래 비중(0.5)을 높여야 함
