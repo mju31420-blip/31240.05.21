@@ -227,8 +227,8 @@ window.CampusDistance = (function () {
     const totalB = b.total ?? b.totalTime ?? 999;
     const tasteA = a.tasteScore ?? a.cuisineScore ?? 0;
     const tasteB = b.tasteScore ?? b.cuisineScore ?? 0;
-    const matchA = a.matchHits ?? 0;
-    const matchB = b.matchHits ?? 0;
+    const matchA = a.cuisineHits ?? a.matchHits ?? 0;
+    const matchB = b.cuisineHits ?? b.matchHits ?? 0;
     const marginA = typeof a.margin === 'number' ? a.margin : -999;
     const marginB = typeof b.margin === 'number' ? b.margin : -999;
     const balanceA = a.balanceScore ?? 0;
