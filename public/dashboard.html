@@ -12,16 +12,20 @@
       --navy: #0c2461;
       --navy2: #071730;
       --blue: #2563eb;
-      --border: #e2e8f2;
-      --sub: #94a3b8;
+      --blue-lt: #eff6ff;
+      --border: #e2e8f0;
+      --sub: #64748b;
       --text: #0f172a;
+      --ok: #059669;
+      --warn: #d97706;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Noto Sans KR', sans-serif;
-      background: #eef2f9;
+      background: #f1f5f9;
       color: var(--text);
       min-height: 100vh;
+      line-height: 1.45;
     }
     .gate {
       min-height: 100vh;
@@ -40,7 +44,7 @@
       box-shadow: 0 12px 40px rgba(7, 23, 48, 0.25);
     }
     .gate-title { font-size: 20px; font-weight: 700; color: var(--navy); margin-bottom: 8px; }
-    .gate-desc { font-size: 13px; color: var(--sub); margin-bottom: 16px; line-height: 1.5; }
+    .gate-desc { font-size: 13px; color: var(--sub); margin-bottom: 16px; }
     .gate-inp {
       width: 100%;
       padding: 12px 14px;
@@ -61,70 +65,197 @@
       cursor: pointer;
     }
     .gate-err { color: #dc2626; font-size: 12px; margin-top: 8px; min-height: 18px; }
-    .dash { display: none; max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
+
+    .dash { display: none; max-width: 1200px; margin: 0 auto; padding: 16px 16px 48px; }
     .dash.on { display: block; }
-    .hdr {
-      background: linear-gradient(150deg, var(--navy2), var(--navy));
+
+    .topbar {
+      background: linear-gradient(135deg, var(--navy2), var(--navy));
       color: #fff;
       border-radius: 16px;
-      padding: 22px 20px;
-      margin-bottom: 20px;
+      padding: 20px;
+      margin-bottom: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
     }
-    .hdr h1 { font-size: 22px; margin-bottom: 4px; }
-    .hdr p { font-size: 12px; color: #93b8e8; line-height: 1.5; }
-    .hdr a { color: #bfdbfe; }
-    .src-pill {
-      display: inline-block;
-      margin-top: 8px;
-      margin-right: 6px;
-      padding: 4px 10px;
-      border-radius: 20px;
+    .topbar h1 { font-size: 20px; font-weight: 700; }
+    .topbar-meta { font-size: 12px; color: #93c5fd; margin-top: 4px; }
+    .topbar-meta a { color: #bfdbfe; }
+    .topbar-actions { display: flex; gap: 8px; align-items: center; }
+    .btn-refresh {
+      padding: 8px 14px;
+      border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-refresh:hover { background: rgba(255,255,255,0.2); }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; width: 100%; }
+    .pill {
       font-size: 11px;
-      background: rgba(255,255,255,0.12);
-      color: #dbeafe;
+      padding: 3px 10px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.14);
+      color: #e0f2fe;
     }
-    .grid {
+
+    .rule-box {
+      background: var(--blue-lt);
+      border: 1px solid #bfdbfe;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 12px;
+      color: #1e40af;
+      margin-bottom: 16px;
+    }
+    .rule-box b { font-weight: 700; }
+
+    .tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .tab {
+      padding: 10px 16px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--sub);
+      cursor: pointer;
+    }
+    .tab.on {
+      background: var(--navy);
+      color: #fff;
+      border-color: var(--navy);
+    }
+
+    .panel { display: none; }
+    .panel.on { display: block; }
+
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    @media (min-width: 800px) {
+      .kpi-row { grid-template-columns: repeat(4, 1fr); }
+    }
+    .kpi {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+    }
+    .kpi-lbl { font-size: 11px; color: var(--sub); margin-bottom: 6px; }
+    .kpi-val { font-size: 26px; font-weight: 700; color: var(--navy); letter-spacing: -0.02em; }
+    .kpi-sub { font-size: 10px; color: var(--sub); margin-top: 6px; line-height: 1.4; }
+    .kpi--accent { border-color: #93c5fd; background: linear-gradient(180deg, #fff 0%, #f8fafc 100%); }
+
+    .funnel {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .funnel h3 { font-size: 13px; color: var(--navy); margin-bottom: 12px; }
+    .funnel-step {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+    .funnel-bar-bg {
+      flex: 1;
+      height: 28px;
+      background: #f1f5f9;
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+    }
+    .funnel-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--navy), var(--blue));
+      border-radius: 8px;
+      min-width: 4px;
+    }
+    .funnel-num { width: 48px; text-align: right; font-weight: 700; color: var(--navy); }
+
+    .grid2 {
       display: grid;
       grid-template-columns: 1fr;
       gap: 16px;
     }
-    @media (min-width: 720px) {
-      .grid { grid-template-columns: 1fr 1fr; }
-      .grid .wide { grid-column: 1 / -1; }
-      .summary-grid { grid-template-columns: repeat(4, 1fr); }
+    @media (min-width: 900px) {
+      .grid2 { grid-template-columns: 1fr 1fr; }
+      .grid2 .span2 { grid-column: 1 / -1; }
     }
+
     .card {
       background: #fff;
-      border-radius: 14px;
       border: 1px solid var(--border);
+      border-radius: 14px;
       padding: 16px;
-      box-shadow: 0 2px 10px rgba(12, 36, 97, 0.06);
     }
-    .card h2 { font-size: 14px; color: var(--navy); margin-bottom: 12px; }
-    .chart-wrap { position: relative; height: 240px; }
-    .chart-wrap--sm { height: 200px; }
+    .card-hd {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      gap: 8px;
+    }
+    .card-hd h2 { font-size: 14px; font-weight: 700; color: var(--navy); }
+    .card-hd .cnt { font-size: 11px; color: var(--sub); }
+
+    .chart-wrap { position: relative; height: 220px; }
+
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    th, td { padding: 8px 6px; border-bottom: 1px solid #f0f4fb; text-align: left; }
-    th { color: var(--sub); font-weight: 600; }
-    .sat-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-    .sat-pill {
-      padding: 4px 10px;
-      border-radius: 20px;
+    th, td {
+      padding: 9px 8px;
+      border-bottom: 1px solid #f1f5f9;
+      text-align: left;
+      vertical-align: middle;
+    }
+    th { color: var(--sub); font-weight: 600; font-size: 11px; white-space: nowrap; }
+    tr:hover td { background: #f8fafc; }
+    code {
+      font-family: ui-monospace, monospace;
       font-size: 11px;
+      background: #f1f5f9;
+      padding: 2px 5px;
+      border-radius: 4px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-size: 10px;
       font-weight: 700;
     }
+    .badge-yes { background: #dcfce7; color: #166534; }
+    .badge-no { background: #f1f5f9; color: #64748b; }
+
+    .sat-bar { display: flex; gap: 6px; flex-wrap: wrap; }
+    .sat-pill { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
     .sat-good { background: #dcfce7; color: #166534; }
     .sat-neutral { background: #f3f4f6; color: #4b5563; }
     .sat-bad { background: #fee2e2; color: #991b1b; }
-    .heat {
-      display: grid;
-      grid-template-columns: repeat(9, 1fr);
-      gap: 4px;
-      margin-top: 8px;
-    }
+
+    .heat { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; }
     .heat-cell {
       aspect-ratio: 1;
-      border-radius: 4px;
+      border-radius: 6px;
       font-size: 9px;
       display: flex;
       align-items: center;
@@ -132,62 +263,32 @@
       color: #fff;
       font-weight: 700;
     }
-    .heat-lbl { font-size: 10px; color: var(--sub); text-align: center; margin-top: 4px; }
-    .loading { text-align: center; color: var(--sub); padding: 40px; line-height: 1.6; }
+
+    .gap-bars { display: flex; flex-direction: column; gap: 8px; }
+    .gap-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+    .gap-row .bar-bg { flex: 1; height: 10px; background: #f1f5f9; border-radius: 5px; overflow: hidden; }
+    .gap-row .bar-fill { height: 100%; background: var(--blue); border-radius: 5px; }
+
+    .pattern-table .pat { font-size: 11px; color: var(--sub); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .loading, .empty {
+      text-align: center;
+      color: var(--sub);
+      padding: 48px 20px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
     .warn-box {
       background: #fff7ed;
       border: 1px solid #fed7aa;
       color: #9a3412;
-      border-radius: 10px;
+      border-radius: 12px;
       padding: 12px 14px;
       font-size: 12px;
       margin-bottom: 16px;
-      line-height: 1.5;
+      line-height: 1.55;
     }
-    .summary-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-    .stat-card {
-      background: #fff;
-      border-radius: 14px;
-      border: 1px solid var(--border);
-      padding: 14px 16px;
-      box-shadow: 0 2px 10px rgba(12, 36, 97, 0.06);
-    }
-    .stat-card .lbl { font-size: 11px; color: var(--sub); margin-bottom: 4px; }
-    .stat-card .val { font-size: 22px; font-weight: 700; color: var(--navy); }
-    .stat-card .sub { font-size: 10px; color: var(--sub); margin-top: 4px; }
-    .gap-bars { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-    .gap-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
-    .gap-row .bar-bg {
-      flex: 1;
-      height: 10px;
-      background: #f1f5f9;
-      border-radius: 5px;
-      overflow: hidden;
-    }
-    .gap-row .bar-fill {
-      height: 100%;
-      background: linear-gradient(90deg, var(--navy), var(--blue));
-      border-radius: 5px;
-    }
-    .bld-list { list-style: none; font-size: 13px; }
-    .bld-list li {
-      display: flex;
-      justify-content: space-between;
-      padding: 8px 0;
-      border-bottom: 1px solid #f0f4fb;
-    }
-    .bld-list li:last-child { border-bottom: none; }
-    .section-title {
-      font-size: 15px;
-      font-weight: 700;
-      color: var(--navy);
-      margin: 8px 0 12px;
-    }
+    .tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   </style>
 </head>
 <body>
@@ -195,7 +296,7 @@
 <div class="gate" id="gate">
   <div class="gate-box">
     <div class="gate-title">🔒 개발자 대시보드</div>
-    <div class="gate-desc">방문 기록·시간표 세션·혼잡도 집계 (개발팀 전용)<br>메인 앱(<a href="/" style="color:#2563eb">/</a>)에는 표시되지 않습니다.</div>
+    <div class="gate-desc">시간표 세션·방문 피드백 집계 (메인 앱과 분리)</div>
     <input class="gate-inp" id="pwIn" type="password" placeholder="비밀번호" autocomplete="off">
     <button class="gate-btn" type="button" id="pwBtn">입장</button>
     <div class="gate-err" id="pwErr"></div>
@@ -203,70 +304,149 @@
 </div>
 
 <div class="dash" id="dash">
-  <div class="hdr">
-    <h1>📊 명비서 데이터 대시보드</h1>
-    <p>
-      방문 <span id="visitCount">0</span>건 · 세션 <span id="sessionCount">0</span>건 ·
-      <a href="/">← 메인 앱</a>
-    </p>
-    <div id="srcPills"></div>
-  </div>
-  <div id="loadMsg" class="loading">데이터 불러오는 중…</div>
+  <header class="topbar">
+    <div>
+      <h1>📊 명비서 분석 대시보드</h1>
+      <div class="topbar-meta">
+        마지막 갱신 <span id="lastRefresh">-</span> ·
+        <a href="/">메인 앱</a>
+      </div>
+      <div class="pill-row" id="srcPills"></div>
+    </div>
+    <div class="topbar-actions">
+      <button type="button" class="btn-refresh" id="btnRefresh">↻ 새로고침</button>
+    </div>
+  </header>
+
+  <div id="loadMsg" class="loading">Firestore·로컬 데이터 불러오는 중…</div>
   <div id="warnBox" class="warn-box" style="display:none"></div>
 
-  <div id="summarySection" style="display:none">
-    <div class="section-title">① 오늘 요약</div>
-    <div class="summary-grid" id="todaySummary"></div>
-    <div class="summary-grid" id="periodSummary" style="margin-top:0"></div>
-  </div>
+  <div id="dashBody" style="display:none">
+    <div class="rule-box">
+      <b>집계 규칙</b> — 같은 시간표(현재 건물 + 다음 건물 + 공강 분)는 <b>동일 패턴 1명</b>으로 묶습니다.
+      분석을 여러 번 해도 패턴이 같으면 고유 사용자 수는 늘지 않습니다. 기기 식별은 uid(앞 8자)로만 참고합니다.
+    </div>
 
-  <div class="grid" id="charts" style="display:none">
-    <div class="card wide">
-      <h2>② 식당별 방문 완료 수</h2>
-      <div class="chart-wrap"><canvas id="chartRest"></canvas></div>
-    </div>
-    <div class="card wide">
-      <h2>식당별 만족도 (😊 / 😐 / 😞)</h2>
-      <div id="satBars"></div>
-    </div>
-    <div class="card wide">
-      <h2>식당별 혼잡도 피드백 평균</h2>
-      <div id="restCrowdAvg"></div>
-    </div>
-    <div class="card wide">
-      <h2>③ 시간대별 방문 수 (11~19시)</h2>
-      <div class="chart-wrap chart-wrap--sm"><canvas id="chartHour"></canvas></div>
-    </div>
-    <div class="card wide">
-      <h2>시간대별 혼잡도 피드백 평균</h2>
-      <div class="heat" id="heatRow"></div>
-      <div style="display:flex;justify-content:space-between;margin-top:6px">
-        <span class="heat-lbl">11시</span><span class="heat-lbl">13시</span><span class="heat-lbl">15시</span><span class="heat-lbl">17시</span><span class="heat-lbl">19시</span>
+    <nav class="tabs" id="tabs">
+      <button type="button" class="tab on" data-tab="overview">개요</button>
+      <button type="button" class="tab" data-tab="timetable">시간표 로그</button>
+      <button type="button" class="tab" data-tab="visits">방문·식당</button>
+      <button type="button" class="tab" data-tab="patterns">패턴 분석</button>
+    </nav>
+
+    <!-- 개요 -->
+    <section class="panel on" id="panel-overview">
+      <div class="kpi-row" id="kpiToday"></div>
+      <div class="kpi-row" id="kpiPeriod"></div>
+      <div class="funnel" id="funnelToday"></div>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-hd"><h2>공강 시간 분포 (누적)</h2></div>
+          <div class="gap-bars" id="gapDist"></div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><h2>현재 위치 건물 Top 5</h2></div>
+          <div class="tbl-scroll">
+            <table><thead><tr><th>#</th><th>건물</th><th>횟수</th><th>패턴 수</th></tr></thead><tbody id="bldTop5"></tbody></table>
+          </div>
+        </div>
       </div>
-    </div>
-    <div class="card">
-      <h2>📅 요일별 방문 패턴</h2>
-      <div class="chart-wrap chart-wrap--sm"><canvas id="chartDow"></canvas></div>
-    </div>
-    <div class="card wide">
-      <h2>④ 최근 방문 기록 20건</h2>
-      <div style="overflow-x:auto">
-        <table>
-          <thead>
-            <tr><th>uid</th><th>시각</th><th>식당</th><th>혼잡도</th><th>만족도</th></tr>
-          </thead>
-          <tbody id="recentTbl"></tbody>
-        </table>
+    </section>
+
+    <!-- 시간표 -->
+    <section class="panel" id="panel-timetable">
+      <div class="card span2" style="margin-bottom:16px">
+        <div class="card-hd">
+          <h2>시간표 분석 기록 (최근 50건)</h2>
+          <span class="cnt" id="sessionTotalLbl">0건</span>
+        </div>
+        <div class="tbl-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>시각 (KST)</th>
+                <th>uid</th>
+                <th>현재→다음</th>
+                <th>공강</th>
+                <th>패턴 ID</th>
+                <th>방문완료</th>
+              </tr>
+            </thead>
+            <tbody id="sessionTbl"></tbody>
+          </table>
+        </div>
       </div>
-    </div>
-    <div class="card">
-      <h2>⑤ 현재 위치 건물 Top 5</h2>
-      <ol class="bld-list" id="bldTop5"></ol>
-    </div>
-    <div class="card">
-      <h2>⑤ 공강 시간 분포</h2>
-      <div class="gap-bars" id="gapDist"></div>
-    </div>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-hd"><h2>오늘 시간표 입력 추이</h2></div>
+          <div class="chart-wrap"><canvas id="chartSessionHour"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><h2>누적 세션 vs 고유 패턴</h2></div>
+          <div class="chart-wrap"><canvas id="chartSessionDup"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 방문 -->
+    <section class="panel" id="panel-visits">
+      <div class="grid2">
+        <div class="card">
+          <div class="card-hd"><h2>식당별 방문 완료</h2></div>
+          <div class="chart-wrap"><canvas id="chartRest"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><h2>시간대별 방문 (11~19시)</h2></div>
+          <div class="chart-wrap"><canvas id="chartHour"></canvas></div>
+        </div>
+        <div class="card span2">
+          <div class="card-hd"><h2>식당별 만족도</h2></div>
+          <div id="satBars"></div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><h2>식당별 혼잡도 평균</h2></div>
+          <div id="restCrowdAvg"></div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><h2>시간대 혼잡도 평균</h2></div>
+          <div class="heat" id="heatRow"></div>
+        </div>
+        <div class="card span2">
+          <div class="card-hd"><h2>최근 방문 20건</h2></div>
+          <div class="tbl-scroll">
+            <table>
+              <thead><tr><th>uid</th><th>시각</th><th>식당</th><th>혼잡</th><th>만족</th></tr></thead>
+              <tbody id="recentTbl"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 패턴 -->
+    <section class="panel" id="panel-patterns">
+      <div class="card">
+        <div class="card-hd">
+          <h2>시간표 패턴별 집계 (전체 누적)</h2>
+          <span class="cnt" id="patternCountLbl">0개 패턴</span>
+        </div>
+        <div class="tbl-scroll">
+          <table class="pattern-table">
+            <thead>
+              <tr>
+                <th>패턴</th>
+                <th>분석 횟수</th>
+                <th>고유 uid</th>
+                <th>방문완료</th>
+                <th>전환율</th>
+                <th>최근</th>
+              </tr>
+            </thead>
+            <tbody id="patternTbl"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   </div>
 </div>
 
@@ -284,12 +464,16 @@
 
   const PASS = '31420';
   const RESTS = ['기숙사', '명진당', '교직원', '학생회관'];
+  const chartInstances = [];
+  let store = { sessions: [], visits: [] };
+  let firebaseApp = null;
+
   const gate = document.getElementById('gate');
   const dash = document.getElementById('dash');
   const pwIn = document.getElementById('pwIn');
   const pwErr = document.getElementById('pwErr');
-  const chartInstances = [];
 
+  /* ── 시간·패턴 유틸 ── */
   function parseTs(tsRaw) {
     if (tsRaw?.toDate) return tsRaw.toDate();
     if (tsRaw instanceof Date) return tsRaw;
@@ -318,10 +502,12 @@
     };
   }
 
+  function formatKst(d) {
+    return d.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+  }
+
   function isTodayKst(d) {
-    const now = kstParts(new Date());
-    const t = kstParts(d);
-    return now.dateKey === t.dateKey;
+    return kstParts(d).dateKey === kstParts(new Date()).dateKey;
   }
 
   function daysSinceMondayKst(d) {
@@ -336,120 +522,26 @@
     return kstParts(d).dateKey >= kstParts(monday).dateKey;
   }
 
-  function uniqueUids(rows) {
-    return new Set(rows.map((r) => r.uid).filter(Boolean));
+  /** 동일 시간표 = 동일 패턴 키 (재분석해도 1명으로 집계) */
+  function patternKey(s) {
+    if (s.patternKey) return s.patternKey;
+    const b = s.buildings || [];
+    const cur = String(b[0] || '?').trim();
+    const next = String(b[1] || 'none').trim();
+    const gap = Number(s.gapMin) || 0;
+    return `${cur}→${next}@${gap}`;
   }
 
-  function pct(num, den) {
-    if (!den) return '0%';
-    return `${Math.round((num / den) * 100)}%`;
+  function patternLabel(s) {
+    const b = s.buildings || [];
+    const cur = b[0] || '?';
+    const next = b[1] || 'none';
+    const gap = Number(s.gapMin) || 0;
+    return `${cur} → ${next} · ${gap}분`;
   }
 
-  function normalizeVisit(d, source) {
-    const ts = parseTs(d.timestamp);
-    return {
-      uid: d.uid || '',
-      restaurant: d.restaurant || '-',
-      satisfaction: d.satisfaction || 'neutral',
-      actualCrowd: Number(d.actualCrowd) || 40,
-      dow: d.dow ?? ts.getDay(),
-      hour: d.hour ?? ts.getHours(),
-      timestamp: ts,
-      source,
-    };
-  }
-
-  function normalizeSession(d, source) {
-    const ts = parseTs(d.timestamp);
-    const buildings = Array.isArray(d.buildings) ? d.buildings : [];
-    return {
-      uid: d.uid || '',
-      buildings,
-      curBuilding: buildings[0] || '-',
-      gapMin: Number(d.gapMin) || 0,
-      visited: !!d.visited,
-      timestamp: ts,
-      source,
-    };
-  }
-
-  function loadLocalVisits() {
-    const rows = [];
-    const seen = new Set();
-    function pushUnique(row) {
-      const key = `${row.timestamp.getTime()}|${row.restaurant}|${row.actualCrowd}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      rows.push(row);
-    }
-    try {
-      JSON.parse(localStorage.getItem('visits') || '[]').forEach((d) => {
-        pushUnique(normalizeVisit({ ...d, uid: d.uid || localStorage.getItem('mb_uid') || '' }, 'local'));
-      });
-    } catch (e) {
-      console.warn('visits parse', e);
-    }
-    try {
-      JSON.parse(localStorage.getItem('crowd_feedback') || '[]').forEach((d) => {
-        pushUnique(
-          normalizeVisit(
-            { ...d, uid: localStorage.getItem('mb_uid') || '', satisfaction: d.satisfaction || 'neutral' },
-            'local feedback',
-          ),
-        );
-      });
-    } catch (e) {
-      console.warn('crowd_feedback parse', e);
-    }
-    return rows;
-  }
-
-  function mergeVisits(localRows, remoteRows) {
-    const seen = new Set(localRows.map((r) => `${r.timestamp.getTime()}|${r.restaurant}|${r.actualCrowd}`));
-    const merged = [...localRows];
-    for (const r of remoteRows) {
-      const key = `${r.timestamp.getTime()}|${r.restaurant}|${r.actualCrowd}`;
-      if (!seen.has(key)) merged.push(r);
-    }
-    return merged.sort((a, b) => b.timestamp - a.timestamp);
-  }
-
-  function renderStatCard(lbl, val, sub) {
-    return `<div class="stat-card"><div class="lbl">${lbl}</div><div class="val">${val}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
-  }
-
-  function renderSummary(sessions, visits) {
-    const todaySessions = sessions.filter((s) => isTodayKst(s.timestamp));
-    const todayVisits = visits.filter((v) => isTodayKst(v.timestamp));
-    const weekSessions = sessions.filter((s) => isThisWeekKst(s.timestamp));
-    const weekVisits = visits.filter((v) => isThisWeekKst(v.timestamp));
-
-    const todayUidSessions = uniqueUids(todaySessions);
-    const todayUidVisits = uniqueUids(todayVisits);
-    const todayUids = new Set([...todayUidSessions, ...todayUidVisits]);
-
-    const ttToday = todaySessions.length;
-    const visitDoneToday = todaySessions.filter((s) => s.visited).length;
-    const visitRecordsToday = todayVisits.length;
-
-    document.getElementById('todaySummary').innerHTML = [
-      renderStatCard('오늘 고유 방문자 (uid)', todayUids.size, '세션·방문 기록 합산 중복 제거'),
-      renderStatCard('오늘 시간표 입력', ttToday, 'sessions 컬렉션'),
-      renderStatCard('오늘 방문 완료', Math.max(visitDoneToday, visitRecordsToday), `세션 visited ${visitDoneToday} · 기록 ${visitRecordsToday}`),
-      renderStatCard('오늘 전환율', pct(Math.max(visitDoneToday, visitRecordsToday), ttToday || visitRecordsToday), '방문완료 ÷ 시간표입력'),
-    ].join('');
-
-    const allUids = uniqueUids([...sessions, ...visits.map((v) => ({ uid: v.uid }))]);
-    const weekUids = uniqueUids([...weekSessions, ...weekVisits.map((v) => ({ uid: v.uid }))]);
-
-    document.getElementById('periodSummary').innerHTML = [
-      renderStatCard('이번 주 고유 방문자', weekUids.size, '월요일(KST)부터'),
-      renderStatCard('전체 고유 방문자', allUids.size, '누적 uid'),
-      renderStatCard('이번 주 시간표 입력', weekSessions.length, ''),
-      renderStatCard('전체 방문 완료', visits.length, `세션 visited ${sessions.filter((s) => s.visited).length}건`),
-    ].join('');
-
-    document.getElementById('summarySection').style.display = 'block';
+  function patternShort(key) {
+    return key.length > 28 ? key.slice(0, 26) + '…' : key;
   }
 
   function gapBucket(gapMin) {
@@ -458,158 +550,149 @@
     return '120분+';
   }
 
-  function renderTimetablePatterns(sessions) {
-    const bldCounts = {};
-    const gapCounts = { '45분대': 0, '75분대': 0, '120분+': 0 };
-    sessions.forEach((s) => {
-      const b = s.curBuilding;
-      if (b && b !== '-') bldCounts[b] = (bldCounts[b] || 0) + 1;
-      gapCounts[gapBucket(s.gapMin)] = (gapCounts[gapBucket(s.gapMin)] || 0) + 1;
-    });
-    const top5 = Object.entries(bldCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5);
-    document.getElementById('bldTop5').innerHTML = top5.length
-      ? top5.map(([name, cnt], i) => `<li><span>${i + 1}. ${name}</span><strong>${cnt}</strong></li>`).join('')
-      : '<li style="color:var(--sub)">시간표 세션 없음</li>';
-
-    const gapMax = Math.max(1, ...Object.values(gapCounts));
-    document.getElementById('gapDist').innerHTML = Object.entries(gapCounts)
-      .map(([label, cnt]) => {
-        const w = Math.round((cnt / gapMax) * 100);
-        return `<div class="gap-row"><span style="width:52px">${label}</span><div class="bar-bg"><div class="bar-fill" style="width:${w}%"></div></div><strong>${cnt}</strong></div>`;
-      })
-      .join('');
+  function uidShort(uid) {
+    return uid ? String(uid).slice(0, 8) : '-';
   }
 
-  function destroyCharts() {
-    chartInstances.forEach((c) => c.destroy());
-    chartInstances.length = 0;
+  function pct(n, d) {
+    if (!d) return '0%';
+    return `${Math.round((n / d) * 100)}%`;
   }
 
-  function renderCharts(visits, sessions) {
-    destroyCharts();
-
-    const restCounts = Object.fromEntries(RESTS.map((r) => [r, 0]));
-    visits.forEach((r) => {
-      if (restCounts[r.restaurant] != null) restCounts[r.restaurant]++;
-    });
-
-    chartInstances.push(
-      new Chart(document.getElementById('chartRest'), {
-        type: 'bar',
-        data: {
-          labels: RESTS,
-          datasets: [{
-            label: '방문 완료',
-            data: RESTS.map((r) => restCounts[r]),
-            backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'],
-          }],
-        },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
-      }),
-    );
-
-    const hours = [];
-    for (let h = 11; h <= 19; h++) hours.push(h);
-    const hourCounts = hours.map((h) => visits.filter((r) => r.hour === h).length);
-    chartInstances.push(
-      new Chart(document.getElementById('chartHour'), {
-        type: 'bar',
-        data: {
-          labels: hours.map((h) => `${h}시`),
-          datasets: [{ label: '방문 수', data: hourCounts, backgroundColor: '#2563eb' }],
-        },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
-      }),
-    );
-
-    const dowLabels = ['일', '월', '화', '수', '목', '금', '토'];
-    const dowCounts = [0, 0, 0, 0, 0, 0, 0];
-    visits.forEach((r) => {
-      if (r.dow >= 0 && r.dow <= 6) dowCounts[r.dow]++;
-    });
-    chartInstances.push(
-      new Chart(document.getElementById('chartDow'), {
-        type: 'bar',
-        data: {
-          labels: dowLabels,
-          datasets: [{ label: '방문 수', data: dowCounts, backgroundColor: '#64748b' }],
-        },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
-      }),
-    );
-
-    document.getElementById('satBars').innerHTML = RESTS.map((rest) => {
-      const subset = visits.filter((r) => r.restaurant === rest);
-      const total = subset.length || 1;
-      const g = subset.filter((r) => r.satisfaction === 'good').length;
-      const n = subset.filter((r) => r.satisfaction === 'neutral').length;
-      const b = subset.filter((r) => r.satisfaction === 'bad').length;
-      return `<div style="margin-bottom:10px">
-        <div style="font-size:12px;font-weight:700;margin-bottom:4px">${rest} (${subset.length}건)</div>
-        <div class="sat-bar">
-          <span class="sat-pill sat-good">😊 ${Math.round((g / total) * 100)}%</span>
-          <span class="sat-pill sat-neutral">😐 ${Math.round((n / total) * 100)}%</span>
-          <span class="sat-pill sat-bad">😞 ${Math.round((b / total) * 100)}%</span>
-        </div>
-      </div>`;
-    }).join('');
-
-    document.getElementById('restCrowdAvg').innerHTML = RESTS.map((rest) => {
-      const subset = visits.filter((r) => r.restaurant === rest);
-      if (!subset.length) return `<div style="font-size:12px;color:var(--sub);margin-bottom:6px">${rest}: 기록 없음</div>`;
-      const avg = subset.reduce((s, r) => s + r.actualCrowd, 0) / subset.length;
-      const lbl = avg <= 20 ? '한산' : avg <= 50 ? '보통' : avg <= 75 ? '혼잡' : '매우혼잡';
-      return `<div style="font-size:12px;margin-bottom:6px"><b>${rest}</b> 평균 ${Math.round(avg)} (${lbl}) · ${subset.length}건</div>`;
-    }).join('');
-
-    const hourAvg = hours.map((h) => {
-      const subset = visits.filter((r) => r.hour === h);
-      if (!subset.length) return null;
-      return subset.reduce((s, r) => s + r.actualCrowd, 0) / subset.length;
-    });
-    document.getElementById('heatRow').innerHTML = hours
-      .map((h, i) => {
-        const v = hourAvg[i];
-        const bg = v == null ? '#e2e8f0' : v < 35 ? '#86efac' : v < 60 ? '#fde047' : v < 80 ? '#fb923c' : '#ef4444';
-        const txt = v == null ? '-' : Math.round(v);
-        return `<div class="heat-cell" style="background:${bg}" title="${h}시">${txt}</div>`;
-      })
-      .join('');
-
-    const satLabel = { good: '😊', neutral: '😐', bad: '😞' };
-    const crowdLabel = (v) => (v <= 20 ? '한산' : v <= 50 ? '보통' : v <= 75 ? '혼잡' : '매우혼잡');
-    const uidShort = (uid) => (uid ? String(uid).slice(0, 8) : '-');
-    document.getElementById('recentTbl').innerHTML = visits.slice(0, 20).map(
-      (r) => `<tr>
-        <td><code>${uidShort(r.uid)}</code></td>
-        <td>${r.timestamp.toLocaleString('ko-KR')}</td>
-        <td>${r.restaurant}</td>
-        <td>${crowdLabel(r.actualCrowd)} (${r.actualCrowd})</td>
-        <td>${satLabel[r.satisfaction] || r.satisfaction}</td>
-      </tr>`,
-    ).join('');
-
-    renderTimetablePatterns(sessions);
+  function aggregateSessions(sessions) {
+    const patterns = new Set(sessions.map(patternKey));
+    const uids = new Set(sessions.map((s) => s.uid).filter(Boolean));
+    const visitedPatterns = new Set(sessions.filter((s) => s.visited).map(patternKey));
+    const visitedCount = sessions.filter((s) => s.visited).length;
+    return {
+      total: sessions.length,
+      uniquePatterns: patterns.size,
+      uniqueUids: uids.size,
+      visitedPatterns: visitedPatterns.size,
+      visitedCount,
+      conversion: patterns.size ? visitedPatterns.size / patterns.size : 0,
+    };
   }
 
-  async function fetchFirestoreCollection(db, name) {
+  function filterPeriod(sessions, kind) {
+    if (kind === 'today') return sessions.filter((s) => isTodayKst(s.timestamp));
+    if (kind === 'week') return sessions.filter((s) => isThisWeekKst(s.timestamp));
+    return sessions;
+  }
+
+  /* ── 데이터 정규화 ── */
+  function normalizeVisit(d) {
+    const ts = parseTs(d.timestamp);
+    return {
+      uid: d.uid || '',
+      restaurant: d.restaurant || '-',
+      satisfaction: d.satisfaction || 'neutral',
+      actualCrowd: Number(d.actualCrowd) || 40,
+      hour: d.hour ?? ts.getHours(),
+      timestamp: ts,
+    };
+  }
+
+  function normalizeSession(d) {
+    const ts = parseTs(d.timestamp);
+    const buildings = Array.isArray(d.buildings) ? d.buildings.filter(Boolean) : [];
+    const row = {
+      uid: d.uid || '',
+      buildings,
+      gapMin: Number(d.gapMin) || 0,
+      visited: !!d.visited,
+      timestamp: ts,
+      patternKey: d.patternKey || null,
+    };
+    row.patternKey = patternKey(row);
+    row.curBuilding = buildings[0] || '-';
+    return row;
+  }
+
+  function loadLocalVisits() {
+    const rows = [];
+    const seen = new Set();
+    const fallbackUid = (() => {
+      try {
+        return localStorage.getItem('mb_uid') || '';
+      } catch {
+        return '';
+      }
+    })();
+    function push(row) {
+      const key = `${row.timestamp.getTime()}|${row.restaurant}|${row.actualCrowd}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      rows.push(row);
+    }
     try {
-      const snap = await getDocs(query(collection(db, name), orderBy('timestamp', 'desc'), limit(1000)));
-      return { rows: snap.docs.map((doc) => doc.data()), ok: true, err: null };
+      JSON.parse(localStorage.getItem('visits') || '[]').forEach((d) => {
+        push(normalizeVisit({ ...d, uid: d.uid || fallbackUid }));
+      });
     } catch (e) {
-      console.warn(`Firestore ${name}`, e);
+      console.warn('visits', e);
+    }
+    return rows;
+  }
+
+  function mergeVisits(local, remote) {
+    const seen = new Set(local.map((r) => `${r.timestamp.getTime()}|${r.restaurant}|${r.actualCrowd}`));
+    const out = [...local];
+    for (const r of remote) {
+      const key = `${r.timestamp.getTime()}|${r.restaurant}|${r.actualCrowd}`;
+      if (!seen.has(key)) out.push(r);
+    }
+    return out.sort((a, b) => b.timestamp - a.timestamp);
+  }
+
+  function dedupeSessions(rows) {
+    const byId = new Map();
+    for (const r of rows) {
+      const id = r.id || `${r.timestamp.getTime()}|${r.patternKey}|${r.uid}`;
+      if (!byId.has(id)) byId.set(id, r);
+    }
+    return [...byId.values()].sort((a, b) => b.timestamp - a.timestamp);
+  }
+
+  function buildPatternStats(sessions) {
+    const map = new Map();
+    for (const s of sessions) {
+      const pk = patternKey(s);
+      if (!map.has(pk)) {
+        map.set(pk, {
+          key: pk,
+          label: patternLabel(s),
+          count: 0,
+          uids: new Set(),
+          visited: 0,
+          lastAt: s.timestamp,
+        });
+      }
+      const g = map.get(pk);
+      g.count++;
+      if (s.uid) g.uids.add(s.uid);
+      if (s.visited) g.visited++;
+      if (s.timestamp > g.lastAt) g.lastAt = s.timestamp;
+    }
+    return [...map.values()].sort((a, b) => b.count - a.count);
+  }
+
+  /* ── Firestore ── */
+  async function fetchCollection(db, name) {
+    try {
+      const snap = await getDocs(query(collection(db, name), orderBy('timestamp', 'desc'), limit(2000)));
+      return { docs: snap.docs, ok: true, err: null };
+    } catch (e) {
       try {
         const snap = await getDocs(collection(db, name));
-        return { rows: snap.docs.map((doc) => doc.data()), ok: true, err: e.message };
+        return { docs: snap.docs, ok: true, err: e.message };
       } catch (e2) {
-        return { rows: [], ok: false, err: e2.message };
+        return { docs: [], ok: false, err: e2.message };
       }
     }
   }
 
-  async function boot() {
+  async function loadData() {
     const localVisits = loadLocalVisits();
     let remoteVisits = [];
     let remoteSessions = [];
@@ -629,74 +712,348 @@
     const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
 
     try {
-      const app = initializeApp(firebaseConfig);
-      const db = getFirestore(app);
+      if (!firebaseApp) {
+        try {
+          firebaseApp = initializeApp(firebaseConfig, 'mb-dash');
+        } catch {
+          firebaseApp = initializeApp(firebaseConfig);
+        }
+      }
+      const db = getFirestore(firebaseApp);
       if (isLocal) {
         try {
           connectFirestoreEmulator(db, '127.0.0.1', 8080);
         } catch (e) {
-          console.warn('Firestore emulator', e.message);
+          console.warn('emulator', e.message);
         }
       }
-      const [vRes, sRes] = await Promise.all([
-        fetchFirestoreCollection(db, 'visits'),
-        fetchFirestoreCollection(db, 'sessions'),
-      ]);
-      remoteVisits = vRes.rows.map((d) => normalizeVisit(d, 'Firestore'));
-      remoteSessions = sRes.rows.map((d) => normalizeSession(d, 'Firestore'));
+      const [vRes, sRes] = await Promise.all([fetchCollection(db, 'visits'), fetchCollection(db, 'sessions')]);
+      remoteVisits = vRes.docs.map((doc) => normalizeVisit(doc.data()));
+      remoteSessions = sRes.docs.map((doc) => ({ id: doc.id, ...normalizeSession(doc.data()) }));
       visitOk = vRes.ok;
       sessionOk = sRes.ok;
       visitErr = vRes.err;
       sessionErr = sRes.err;
     } catch (e) {
-      visitErr = e.message;
-      sessionErr = e.message;
-      console.warn('Firestore init', e);
+      visitErr = sessionErr = e.message;
     }
 
     const visits = mergeVisits(localVisits, remoteVisits);
-    const sessions = remoteSessions.sort((a, b) => b.timestamp - a.timestamp);
+    const sessions = dedupeSessions(remoteSessions);
 
-    const pills = [];
-    if (localVisits.length) pills.push(`로컬 방문 ${localVisits.length}건`);
-    if (visitOk && remoteVisits.length) pills.push(`Firestore 방문 ${remoteVisits.length}건`);
-    if (visitOk && !remoteVisits.length) pills.push('Firestore 방문 0건');
-    if (sessionOk && remoteSessions.length) pills.push(`Firestore 세션 ${remoteSessions.length}건`);
-    if (sessionOk && !remoteSessions.length) pills.push('Firestore 세션 0건');
-    document.getElementById('srcPills').innerHTML = pills.map((t) => `<span class="src-pill">${t}</span>`).join('');
+    return { visits, sessions, localVisits, remoteVisits, remoteSessions, visitOk, sessionOk, visitErr, sessionErr };
+  }
 
-    const warnBox = document.getElementById('warnBox');
-    const hasAny = visits.length || sessions.length;
-    if (!hasAny) {
-      warnBox.style.display = 'block';
-      warnBox.innerHTML =
-        '표시할 데이터가 없습니다.<br>① 메인 앱에서 시간표 분석 후 「방문 완료 기록」을 남기거나<br>② Firebase Hosting으로 열면 Firestore에 저장됩니다.';
-      if (visitErr || sessionErr) {
-        warnBox.innerHTML += `<br><br>Firestore: ${visitErr || sessionErr}`;
-      }
-    } else if ((visitErr || sessionErr) && !remoteVisits.length && !remoteSessions.length && localVisits.length) {
-      warnBox.style.display = 'block';
-      warnBox.textContent = `Firestore 연결 실패 — 이 브라우저 로컬 기록만 표시 중 (${visitErr || sessionErr})`;
-    } else {
-      warnBox.style.display = 'none';
-    }
+  /* ── 렌더 ── */
+  function destroyCharts() {
+    chartInstances.forEach((c) => c.destroy());
+    chartInstances.length = 0;
+  }
+
+  function kpiCard(lbl, val, sub, accent) {
+    return `<div class="kpi${accent ? ' kpi--accent' : ''}">
+      <div class="kpi-lbl">${lbl}</div>
+      <div class="kpi-val">${val}</div>
+      ${sub ? `<div class="kpi-sub">${sub}</div>` : ''}
+    </div>`;
+  }
+
+  function renderKpis(sessions) {
+    const today = filterPeriod(sessions, 'today');
+    const week = filterPeriod(sessions, 'week');
+    const all = sessions;
+    const t = aggregateSessions(today);
+    const w = aggregateSessions(week);
+    const a = aggregateSessions(all);
+
+    document.getElementById('kpiToday').innerHTML = [
+      kpiCard('오늘 고유 사용자', t.uniquePatterns, '같은 시간표 패턴 = 1명', true),
+      kpiCard('오늘 분석 횟수', t.total, `고유 패턴 ${t.uniquePatterns}개 · uid ${t.uniqueUids}대`, false),
+      kpiCard('오늘 방문 완료', t.visitedPatterns, `세션 visited ${t.visitedCount}건`, false),
+      kpiCard('오늘 전환율', pct(t.visitedPatterns, t.uniquePatterns), '방문완료 패턴 ÷ 고유 패턴', false),
+    ].join('');
+
+    document.getElementById('kpiPeriod').innerHTML = [
+      kpiCard('이번 주 고유 사용자', w.uniquePatterns, `분석 ${w.total}회`, false),
+      kpiCard('이번 주 전환율', pct(w.visitedPatterns, w.uniquePatterns), '', false),
+      kpiCard('전체 누적 패턴', a.uniquePatterns, `분석 ${a.total}회 · uid ${a.uniqueUids}대`, false),
+      kpiCard('전체 전환율', pct(a.visitedPatterns, a.uniquePatterns), `방문 기록 ${store.visits.length}건`, false),
+    ].join('');
+
+    const max = Math.max(t.uniquePatterns, t.total, t.visitedPatterns, 1);
+    document.getElementById('funnelToday').innerHTML = `
+      <h3>오늘 전환 퍼널 (패턴 기준)</h3>
+      ${[
+        ['고유 시간표 패턴', t.uniquePatterns],
+        ['분석 실행 (중복 포함)', t.total],
+        ['방문 완료한 패턴', t.visitedPatterns],
+      ]
+        .map(
+          ([label, n]) => `<div class="funnel-step">
+          <span style="width:120px">${label}</span>
+          <div class="funnel-bar-bg"><div class="funnel-bar-fill" style="width:${Math.round((n / max) * 100)}%"></div></div>
+          <span class="funnel-num">${n}</span>
+        </div>`,
+        )
+        .join('')}
+      <p style="font-size:11px;color:var(--sub);margin-top:10px">분석 횟수 &gt; 고유 패턴이면 같은 시간표를 반복 입력한 것입니다.</p>`;
+  }
+
+  function renderGapAndBuildings(sessions) {
+    const gapCounts = { '45분대': 0, '75분대': 0, '120분+': 0 };
+    const bldCounts = {};
+    sessions.forEach((s) => {
+      gapCounts[gapBucket(s.gapMin)] = (gapCounts[gapBucket(s.gapMin)] || 0) + 1;
+      const b = s.curBuilding;
+      if (b && b !== '-') bldCounts[b] = (bldCounts[b] || 0) + 1;
+    });
+    const gapMax = Math.max(1, ...Object.values(gapCounts));
+    document.getElementById('gapDist').innerHTML = Object.entries(gapCounts)
+      .map(([label, cnt]) => {
+        const w = Math.round((cnt / gapMax) * 100);
+        return `<div class="gap-row"><span style="width:56px">${label}</span><div class="bar-bg"><div class="bar-fill" style="width:${w}%"></div></div><strong>${cnt}</strong></div>`;
+      })
+      .join('');
+
+    const top5 = Object.entries(bldCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+    const patternByBld = {};
+    sessions.forEach((s) => {
+      const b = s.curBuilding;
+      if (!b) return;
+      if (!patternByBld[b]) patternByBld[b] = new Set();
+      patternByBld[b].add(patternKey(s));
+    });
+    document.getElementById('bldTop5').innerHTML = top5.length
+      ? top5
+          .map(
+            ([name, cnt], i) =>
+              `<tr><td>${i + 1}</td><td>${name}</td><td><b>${cnt}</b></td><td>${patternByBld[name]?.size ?? 0}</td></tr>`,
+          )
+          .join('')
+      : '<tr><td colspan="4" style="color:var(--sub)">세션 없음</td></tr>';
+  }
+
+  function renderSessionTable(sessions) {
+    document.getElementById('sessionTotalLbl').textContent = `누적 ${sessions.length}건`;
+    const rows = sessions.slice(0, 50);
+    document.getElementById('sessionTbl').innerHTML = rows.length
+      ? rows
+          .map(
+            (s) => `<tr>
+          <td>${formatKst(s.timestamp)}</td>
+          <td><code>${uidShort(s.uid)}</code></td>
+          <td>${(s.buildings[0] || '?')} → ${(s.buildings[1] || 'none')}</td>
+          <td>${s.gapMin}분</td>
+          <td class="pat" title="${patternKey(s)}"><code>${patternShort(patternKey(s))}</code></td>
+          <td><span class="badge ${s.visited ? 'badge-yes' : 'badge-no'}">${s.visited ? '완료' : '-'}</span></td>
+        </tr>`,
+          )
+          .join('')
+      : '<tr><td colspan="6" style="color:var(--sub)">아직 시간표 분석 기록이 없습니다. 메인 앱에서 분석을 실행해 주세요.</td></tr>';
+  }
+
+  function renderPatternTable(sessions) {
+    const stats = buildPatternStats(sessions);
+    document.getElementById('patternCountLbl').textContent = `${stats.length}개 패턴`;
+    document.getElementById('patternTbl').innerHTML = stats.length
+      ? stats
+          .slice(0, 100)
+          .map((p) => {
+            const conv = p.count ? Math.round((Math.min(p.visited, p.count) / p.count) * 100) : 0;
+            const converted = p.visited > 0 ? 'Y' : '-';
+            return `<tr>
+          <td title="${p.key}">${p.label}</td>
+          <td><b>${p.count}</b></td>
+          <td>${p.uids.size}</td>
+          <td>${converted} (${p.visited})</td>
+          <td>${conv}%</td>
+          <td style="font-size:11px;color:var(--sub)">${formatKst(p.lastAt)}</td>
+        </tr>`;
+          })
+          .join('')
+      : '<tr><td colspan="6" style="color:var(--sub)">패턴 없음</td></tr>';
+  }
+
+  function renderVisits(visits) {
+    const satLabel = { good: '😊', neutral: '😐', bad: '😞' };
+    const crowdLabel = (v) => (v <= 20 ? '한산' : v <= 50 ? '보통' : v <= 75 ? '혼잡' : '매우혼잡');
+
+    const restCounts = Object.fromEntries(RESTS.map((r) => [r, 0]));
+    visits.forEach((r) => {
+      if (restCounts[r.restaurant] != null) restCounts[r.restaurant]++;
+    });
+
+    chartInstances.push(
+      new Chart(document.getElementById('chartRest'), {
+        type: 'bar',
+        data: {
+          labels: RESTS,
+          datasets: [{ label: '방문', data: RESTS.map((r) => restCounts[r]), backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'] }],
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
+      }),
+    );
+
+    const hours = [];
+    for (let h = 11; h <= 19; h++) hours.push(h);
+    chartInstances.push(
+      new Chart(document.getElementById('chartHour'), {
+        type: 'bar',
+        data: {
+          labels: hours.map((h) => `${h}시`),
+          datasets: [{ label: '방문', data: hours.map((h) => visits.filter((r) => r.hour === h).length), backgroundColor: '#2563eb' }],
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
+      }),
+    );
+
+    document.getElementById('satBars').innerHTML = RESTS.map((rest) => {
+      const subset = visits.filter((r) => r.restaurant === rest);
+      const total = subset.length || 1;
+      const g = subset.filter((r) => r.satisfaction === 'good').length;
+      const n = subset.filter((r) => r.satisfaction === 'neutral').length;
+      const b = subset.filter((r) => r.satisfaction === 'bad').length;
+      return `<div style="margin-bottom:12px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:4px">${rest} (${subset.length})</div>
+        <div class="sat-bar">
+          <span class="sat-pill sat-good">😊 ${Math.round((g / total) * 100)}%</span>
+          <span class="sat-pill sat-neutral">😐 ${Math.round((n / total) * 100)}%</span>
+          <span class="sat-pill sat-bad">😞 ${Math.round((b / total) * 100)}%</span>
+        </div>
+      </div>`;
+    }).join('');
+
+    document.getElementById('restCrowdAvg').innerHTML = RESTS.map((rest) => {
+      const subset = visits.filter((r) => r.restaurant === rest);
+      if (!subset.length) return `<div style="font-size:12px;color:var(--sub);margin-bottom:8px">${rest}: 없음</div>`;
+      const avg = subset.reduce((s, r) => s + r.actualCrowd, 0) / subset.length;
+      return `<div style="font-size:12px;margin-bottom:8px"><b>${rest}</b> · 평균 ${Math.round(avg)} (${crowdLabel(avg)}) · ${subset.length}건</div>`;
+    }).join('');
+
+    const hourAvg = hours.map((h) => {
+      const subset = visits.filter((r) => r.hour === h);
+      return subset.length ? subset.reduce((s, r) => s + r.actualCrowd, 0) / subset.length : null;
+    });
+    document.getElementById('heatRow').innerHTML = hours
+      .map((h, i) => {
+        const v = hourAvg[i];
+        const bg = v == null ? '#e2e8f0' : v < 35 ? '#86efac' : v < 60 ? '#fde047' : v < 80 ? '#fb923c' : '#ef4444';
+        return `<div class="heat-cell" style="background:${bg}">${v == null ? '-' : Math.round(v)}</div>`;
+      })
+      .join('');
+
+    document.getElementById('recentTbl').innerHTML = visits.slice(0, 20).map(
+      (r) => `<tr>
+        <td><code>${uidShort(r.uid)}</code></td>
+        <td>${formatKst(r.timestamp)}</td>
+        <td>${r.restaurant}</td>
+        <td>${crowdLabel(r.actualCrowd)}</td>
+        <td>${satLabel[r.satisfaction] || r.satisfaction}</td>
+      </tr>`,
+    ).join('');
+  }
+
+  function renderSessionCharts(sessions) {
+    const today = filterPeriod(sessions, 'today');
+    const hours = [];
+    for (let h = 7; h <= 22; h++) hours.push(h);
+    chartInstances.push(
+      new Chart(document.getElementById('chartSessionHour'), {
+        type: 'line',
+        data: {
+          labels: hours.map((h) => `${h}시`),
+          datasets: [
+            {
+              label: '분석 횟수',
+              data: hours.map((h) => today.filter((s) => kstParts(s.timestamp).h === h).length),
+              borderColor: '#2563eb',
+              backgroundColor: 'rgba(37,99,235,0.1)',
+              fill: true,
+              tension: 0.3,
+            },
+          ],
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
+      }),
+    );
+
+    const t = aggregateSessions(today);
+    chartInstances.push(
+      new Chart(document.getElementById('chartSessionDup'), {
+        type: 'doughnut',
+        data: {
+          labels: ['고유 패턴', '중복 분석'],
+          datasets: [
+            {
+              data: [t.uniquePatterns, Math.max(0, t.total - t.uniquePatterns)],
+              backgroundColor: ['#0c2461', '#cbd5e1'],
+            },
+          ],
+        },
+        options: { responsive: true, maintainAspectRatio: false },
+      }),
+    );
+  }
+
+  function renderAll() {
+    destroyCharts();
+    const { sessions, visits } = store;
+    renderKpis(sessions);
+    renderGapAndBuildings(sessions);
+    renderSessionTable(sessions);
+    renderPatternTable(sessions);
+    renderVisits(visits);
+    renderSessionCharts(sessions);
+  }
+
+  async function boot() {
+    document.getElementById('loadMsg').style.display = 'block';
+    document.getElementById('dashBody').style.display = 'none';
+
+    const data = await loadData();
+    store = { sessions: data.sessions, visits: data.visits };
 
     document.getElementById('loadMsg').style.display = 'none';
-    document.getElementById('visitCount').textContent = String(visits.length);
-    document.getElementById('sessionCount').textContent = String(sessions.length);
+    document.getElementById('lastRefresh').textContent = formatKst(new Date());
 
-    renderSummary(sessions, visits);
+    const pills = [];
+    if (data.localVisits.length) pills.push(`로컬 방문 ${data.localVisits.length}`);
+    if (data.remoteVisits.length) pills.push(`Firestore 방문 ${data.remoteVisits.length}`);
+    if (data.remoteSessions.length) pills.push(`Firestore 세션 ${data.remoteSessions.length}`);
+    else pills.push('Firestore 세션 0');
+    document.getElementById('srcPills').innerHTML = pills.map((t) => `<span class="pill">${t}</span>`).join('');
 
-    const showCharts = visits.length || sessions.length;
-    document.getElementById('charts').style.display = showCharts ? 'grid' : 'none';
-    if (showCharts) renderCharts(visits, sessions);
+    const warn = document.getElementById('warnBox');
+    const hasData = data.sessions.length || data.visits.length;
+    if (!hasData) {
+      warn.style.display = 'block';
+      warn.innerHTML =
+        '데이터가 없습니다. 메인 앱에서 <b>시간표 분석</b> 후 <b>방문 완료</b>를 남기면 Firestore에 쌓입니다.';
+      if (data.visitErr || data.sessionErr) warn.innerHTML += `<br><br><small>Firestore: ${data.sessionErr || data.visitErr}</small>`;
+    } else if ((data.sessionErr || data.visitErr) && !data.remoteSessions.length) {
+      warn.style.display = 'block';
+      warn.textContent = `Firestore 세션을 불러오지 못했습니다 (${data.sessionErr || data.visitErr}). 방문 로컬만 있을 수 있습니다.`;
+    } else {
+      warn.style.display = 'none';
+    }
+
+    document.getElementById('dashBody').style.display = hasData || data.remoteSessions.length === 0 ? 'block' : 'none';
+    if (hasData || !data.remoteSessions.length) renderAll();
   }
 
-  if (sessionStorage.getItem('mb_dash_ok') === '1') {
-    gate.style.display = 'none';
-    dash.classList.add('on');
-    boot();
-  }
+  /* ── 탭·로그인 ── */
+  document.getElementById('tabs').addEventListener('click', (e) => {
+    const btn = e.target.closest('.tab');
+    if (!btn) return;
+    document.querySelectorAll('.tab').forEach((t) => t.classList.remove('on'));
+    document.querySelectorAll('.panel').forEach((p) => p.classList.remove('on'));
+    btn.classList.add('on');
+    document.getElementById('panel-' + btn.dataset.tab).classList.add('on');
+  });
+
+  document.getElementById('btnRefresh').onclick = () => boot();
 
   function tryLogin() {
     if (pwIn.value === PASS) {
@@ -714,6 +1071,12 @@
   pwIn.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') tryLogin();
   });
+
+  if (sessionStorage.getItem('mb_dash_ok') === '1') {
+    gate.style.display = 'none';
+    dash.classList.add('on');
+    boot();
+  }
 </script>
 </body>
 </html>

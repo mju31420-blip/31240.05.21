@@ -577,21 +577,54 @@ function setMd(m) {
   document.getElementById('imgMode').style.display = m === 'img' ? 'block' : 'none';
 }
 
+let _ttEmptyModeApplied = false;
+
+function syncManualFieldLabels(hasSavedTimetable) {
+  const lblCur = document.getElementById('lblMCur');
+  const lblNext = document.getElementById('lblMNext');
+  if (!lblCur || !lblNext) return;
+  if (hasSavedTimetable) {
+    lblCur.textContent = '방금 종료된 수업 위치';
+    lblNext.textContent = '다음 수업 위치';
+  } else {
+    lblCur.textContent = '현재 위치 (건물)';
+    lblNext.textContent = '다음 이동 위치';
+  }
+}
+
 function updateSavedTimetableUi() {
   const hint = document.getElementById('ttHint');
   const summary = document.getElementById('savedTtSummary');
   if (typeof TimetableUtil === 'undefined') return;
   const classes = TimetableUtil.loadUserTimetable();
+  const hasSaved = classes.length > 0;
   const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
   const dow = ref.getDay();
   const offDay = isNoSchoolDay(ref);
   const today = offDay ? [] : classes.filter((c) => c.dow === dow);
+  const dayLabel =
+    typeof SchoolCalendar !== 'undefined' && SchoolCalendar.dayLabel
+      ? SchoolCalendar.dayLabel(ref)
+      : `${TimetableUtil.DOW_NAMES[dow]}요일`;
+
+  syncManualFieldLabels(hasSaved);
+
+  if (!hasSaved && !_ttEmptyModeApplied) {
+    _ttEmptyModeApplied = true;
+    setMd('img');
+  }
+
   if (hint) {
-    hint.textContent = today.length
-      ? `📅 저장된 시간표 ${classes.length}개 · 오늘 ${today.length}개 수업 — 「저장 시간표」 탭에서 즉시 분석 가능`
-      : offDay
-        ? `${typeof SchoolCalendar !== 'undefined' ? SchoolCalendar.dayLabel(ref) : '휴일'} — 수업 없음. 주간 OCR로 평일 시간표를 저장해 두면 개학일에 바로 쓸 수 있어요.`
-        : '시간표 이미지 OCR 후 수업 목록이 자동 저장됩니다.';
+    if (!hasSaved) {
+      hint.textContent =
+        '등록된 시간표가 없습니다. 「이미지 + AI」로 캡처를 올리거나, 「수동 입력」에서 건물·공강만 골라 바로 분석할 수 있어요.';
+    } else if (today.length) {
+      hint.textContent = `📅 저장된 시간표 ${classes.length}개 · 오늘 ${today.length}개 수업 — 「저장 시간표」 탭에서 즉시 분석 가능`;
+    } else if (offDay) {
+      hint.textContent = `${dayLabel} — 오늘 수업 없음 · 저장된 주간 시간표 ${classes.length}과목`;
+    } else {
+      hint.textContent = `오늘(${TimetableUtil.DOW_NAMES[dow]}) 수업 없음 · 저장된 주간 시간표 ${classes.length}과목 — 「저장 시간표」에서 분석 가능`;
+    }
   }
   if (summary) {
     if (today.length) {

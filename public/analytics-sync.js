@@ -34,11 +34,21 @@ window.saveVisitToFirestore = async (data) => {
   });
 };
 
+function buildPatternKey(buildings, gapMin) {
+  const b = buildings || [];
+  const cur = String(b[0] || '?').trim();
+  const next = String(b[1] || 'none').trim();
+  return `${cur}→${next}@${Number(gapMin) || 0}`;
+}
+
 window.saveSessionToFirestore = async (data) => {
+  const buildings = data.buildings || [];
+  const gapMin = data.gapMin ?? 0;
   const ref = await addDoc(collection(db, 'sessions'), {
     uid: data.uid,
-    buildings: data.buildings || [],
-    gapMin: data.gapMin ?? 0,
+    buildings,
+    gapMin,
+    patternKey: buildPatternKey(buildings, gapMin),
     timestamp: data.timestamp || new Date(),
     visited: false,
   });
