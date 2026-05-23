@@ -591,7 +591,7 @@ function updateSavedTimetableUi() {
       ? `📅 저장된 시간표 ${classes.length}개 · 오늘 ${today.length}개 수업 — 「저장 시간표」 탭에서 즉시 분석 가능`
       : offDay
         ? `${typeof SchoolCalendar !== 'undefined' ? SchoolCalendar.dayLabel(ref) : '휴일'} — 수업 없음. 주간 OCR로 평일 시간표를 저장해 두면 개학일에 바로 쓸 수 있어요.`
-        : '시간표 이미지 OCR 후 수업 목록이 자동 저장됩니다. 샘플 시간표도 사용할 수 있어요.';
+        : '시간표 이미지 OCR 후 수업 목록이 자동 저장됩니다.';
   }
   if (summary) {
     if (today.length) {
@@ -626,7 +626,9 @@ function refineScheduleAnalysis(api = {}) {
     const fromApi = TimetableUtil.normalizeClassesFromAi(api.classes || [], ref.getDay());
     if (fromApi.length) {
       classes = fromApi;
-      TimetableUtil.saveUserTimetable(classes);
+      if (api.classes?.length) {
+        TimetableUtil.saveUserTimetable(classes);
+      }
     } else {
       classes = TimetableUtil.loadUserTimetable();
     }
@@ -2839,6 +2841,13 @@ async function bootApp() {
 
 async function tryAutoAnalyzeFromSavedTimetable() {
   if (typeof TimetableUtil === 'undefined' || lastData) return;
+  let hasSaved = false;
+  try {
+    hasSaved = !!localStorage.getItem('myeong_timetable');
+  } catch {
+    return;
+  }
+  if (!hasSaved) return;
   const classes = TimetableUtil.loadUserTimetable();
   if (!classes.length) return;
   const ref = typeof KST !== 'undefined' ? KST.now() : new Date();

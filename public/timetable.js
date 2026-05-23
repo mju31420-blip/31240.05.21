@@ -1,23 +1,7 @@
 /**
- * 사용자 주간 시간표 (에브리타임 캡처 / OCR / 수동 저장)
+ * 사용자 주간 시간표 (에브리타임 캡처 / OCR 저장분만 사용, 기본값 없음)
  */
-window.USER_TIMETABLE = [
-  { dow: 1, start: '09:00', end: '10:30', name: '환경과인간', room: 'Y2532', buildingKey: '자연', teacher: '조성경' },
-  { dow: 1, start: '13:00', end: '14:30', name: '디지털논리회로', room: 'Y19221', buildingKey: '3공', teacher: '남순열' },
-  { dow: 1, start: '14:30', end: '16:00', name: '전자기학', room: 'Y19127', buildingKey: '3공', teacher: '정의훈' },
-
-  { dow: 2, start: '10:00', end: '11:30', name: '회로이론', room: 'Y19116', buildingKey: '3공', teacher: '강상희' },
-  { dow: 2, start: '12:00', end: '13:00', name: '채플', room: 'Y22217', buildingKey: '채플', teacher: '교목실' },
-  { dow: 2, start: '14:00', end: '16:00', name: '전기회로실험1', room: 'Y19319', buildingKey: '3공', teacher: '심재륜' },
-
-  { dow: 3, start: '09:00', end: '10:30', name: '환경과인간', room: 'Y2532', buildingKey: '자연', teacher: '조성경' },
-  { dow: 3, start: '11:00', end: '12:30', name: '디지털논리회로', room: 'Y19221', buildingKey: '3공', teacher: '남순열' },
-  { dow: 3, start: '13:00', end: '14:00', name: '전자기학', room: 'Y19127', buildingKey: '3공', teacher: '정의훈' },
-  { dow: 3, start: '14:00', end: '16:30', name: 'C언어', room: 'Y9119', buildingKey: '공2', teacher: '미배정' },
-
-  { dow: 4, start: '10:00', end: '12:00', name: '회로이론', room: 'Y19116', buildingKey: '3공', teacher: '강상희' },
-  { dow: 4, start: '13:00', end: '15:00', name: '디지털논리회로실험', room: 'Y19319', buildingKey: '3공', teacher: '김태완' },
-];
+window.USER_TIMETABLE = [];
 
 /** 수동 입력·OCR 공통 캠퍼스 건물 (표시 순) */
 const CAMPUS_BUILDINGS = [
@@ -113,7 +97,7 @@ function loadUserTimetable() {
     const raw = localStorage.getItem('myeong_timetable');
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length) {
+      if (Array.isArray(parsed)) {
         window.USER_TIMETABLE = parsed;
         return parsed;
       }
@@ -121,6 +105,7 @@ function loadUserTimetable() {
   } catch (e) {
     console.warn('[timetable] load', e);
   }
+  window.USER_TIMETABLE = [];
   return window.USER_TIMETABLE;
 }
 
