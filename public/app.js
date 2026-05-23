@@ -1291,6 +1291,10 @@ function cuisineMatchScore(menus, tastes) {
   return analyzeCuisineFit(menus, tastes).score;
 }
 
+function menuMatchHits(menus) {
+  return (menus || []).filter((m) => m.tag === 'match').length;
+}
+
 const DELIVERY_LINKS = [
   { name: '배달의민족', url: 'https://www.baemin.com', icon: '🛵' },
   { name: '쿠팡이츠', url: 'https://www.coupangeats.com', icon: '🟡' },
@@ -1409,34 +1413,45 @@ function toRankCompareRow(row) {
     wait: row.wait,
     total: row.total,
     tasteScore: row.tasteScore,
+    matchHits: row.matchHits,
     score: row.score,
     tier: row.tier,
   };
 }
 
 function compareRestaurantRows(a, b, mode, period) {
-  const cA = isRestaurantClosed(a);
-  const cB = isRestaurantClosed(b);
-  if (cA !== cB) return cA ? 1 : -1;
-  if (cA && cB) return (a.key || '').localeCompare(b.key || '', 'ko');
-
   const mealPeriod = period || mealMode || 'lunch';
   if (typeof CampusDistance !== 'undefined' && typeof CampusDistance.compareRestaurants === 'function') {
     return CampusDistance.compareRestaurants(a, b, mode, mealPeriod);
   }
-  if (mealPeriod === 'dinner') {
-    if (mode === 'food' && (b.tasteScore || 0) !== (a.tasteScore || 0)) {
-      return (b.tasteScore || 0) - (a.tasteScore || 0);
-    }
-    return (a.walk || 0) - (b.walk || 0) || (a.total || 0) - (b.total || 0);
-  }
+  const cA = isRestaurantClosed(a);
+  const cB = isRestaurantClosed(b);
+  if (cA !== cB) return cA ? 1 : -1;
+  const tierA = a.tier ?? 0;
+  const tierB = b.tier ?? 0;
+  if (tierA !== tierB) return tierA - tierB;
   if (mode === 'distance') {
-    return (a.walk || 0) - (b.walk || 0) || (a.total || 0) - (b.total || 0) || (a.wait || 0) - (b.wait || 0);
+    return (
+      (a.walk || 0) - (b.walk || 0) ||
+      (a.total || 0) - (b.total || 0) ||
+      (a.wait || 0) - (b.wait || 0) ||
+      (b.margin ?? 0) - (a.margin ?? 0)
+    );
   }
   if (mode === 'food') {
-    return (b.tasteScore || 0) - (a.tasteScore || 0) || b.score - a.score;
+    return (
+      (b.matchHits || 0) - (a.matchHits || 0) ||
+      (b.tasteScore || 0) - (a.tasteScore || 0) ||
+      (a.walk || 0) - (b.walk || 0) ||
+      (a.total || 0) - (b.total || 0)
+    );
   }
-  return b.score - a.score || (b.margin ?? 0) - (a.margin ?? 0);
+  return (
+    b.score - a.score ||
+    (b.margin ?? 0) - (a.margin ?? 0) ||
+    (a.total || 0) - (b.total || 0) ||
+    (a.walk || 0) - (b.walk || 0)
+  );
 }
 
 function crowdBadgeLabel(st, baseBadge) {
@@ -2002,8 +2017,14 @@ function drawFood() {
     const isClosed = cardState === 'closed';
     const showMenus = !isClosed && !menuOffDay;
     const menus = showMenus ? getMenus(def.key, mealMode, menuDayOff) : [];
-    const walk = base.도보분 ?? CampusDistance.walkToRest(fromKey, def.key);
-    const back = base.복귀분 ?? CampusDistance.walkRestToBuilding(def.key, nextKey);
+    const walk =
+      typeof CampusDistance !== 'undefined'
+        ? CampusDistance.walkToRest(fromKey, def.key)
+        : base.도보분 ?? 8;
+    const back =
+      typeof CampusDistance !== 'undefined'
+        ? CampusDistance.walkRestToBuilding(def.key, nextKey)
+        : base.복귀분 ?? 0;
     const congBase = base.혼잡도 || getDynamicCrowd(def.key);
     const liveCong = cardState === 'operating' ? getDynamicCrowd(def.key) : congBase;
     const liveWait = cardState === 'dinner_soon' ? 0 : waitMin(liveCong);
@@ -2016,6 +2037,7 @@ function drawFood() {
     const margin = gapMin - total;
     const st = isClosed ? 'closed' : liveCong >= 80 ? 'bad' : liveCong >= 55 ? 'warn' : 'ok';
     const tasteScore = cuisineMatchScore(menus, effectiveTastes());
+    const matchHits = menuMatchHits(menus);
     const scoreResult = isClosed
       ? { score: 0, closed: true, tier: 2, infeasible: false, margin }
       : getRestaurantScore({
@@ -2049,6 +2071,7 @@ function drawFood() {
       margin: rowMargin,
       score,
       tasteScore,
+      matchHits,
       cardState,
       hoursText,
       openNow: cardState === 'operating',
@@ -2058,16 +2081,9 @@ function drawFood() {
     };
   });
 
-  const rankableRows = [];
-  const closedRows = [];
-  for (const row of scored) {
-    (isRankableRestaurant(row) ? rankableRows : closedRows).push(row);
-  }
-  rankableRows.sort((a, b) =>
+  const ordered = [...scored].sort((a, b) =>
     compareRestaurantRows(toRankCompareRow(a), toRankCompareRow(b), activeRankMode, mealMode),
   );
-  closedRows.sort((a, b) => (a.key || '').localeCompare(b.key || '', 'ko'));
-  const ordered = rankableRows.concat(closedRows);
 
   let pickName = '추천 식당';
   let pickKey = ordered[0]?.key;
