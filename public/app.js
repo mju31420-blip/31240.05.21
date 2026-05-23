@@ -1,7 +1,58 @@
 /* ════════════════════════════ PROFILE ════ */
 const SETUP_DONE_KEY = 'mb_setup_done';
+const MB_LAST_SESSION_KEY = 'mb_last_session_id';
 /** 배포·캐시 확인용 — 콘솔에서 window.MB_APP_BUILD 로 확인 */
-const MB_APP_BUILD = '2026-05-22-fix3';
+const MB_APP_BUILD = '2026-05-23-dash1';
+
+function getOrCreateUid() {
+  try {
+    let uid = localStorage.getItem('mb_uid');
+    if (!uid) {
+      uid = 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+      localStorage.setItem('mb_uid', uid);
+    }
+    return uid;
+  } catch {
+    return 'u_anon_' + Math.random().toString(36).slice(2, 8);
+  }
+}
+
+async function persistAnalysisSession(curKey, nextKey, gapMin) {
+  if (typeof window.saveSessionToFirestore !== 'function') return;
+  try {
+    const sessionId = await window.saveSessionToFirestore({
+      uid: getOrCreateUid(),
+      buildings: [curKey, nextKey].filter((b) => b && b !== 'none'),
+      gapMin,
+      timestamp: new Date(),
+      visited: false,
+    });
+    if (sessionId) {
+      try {
+        localStorage.setItem(MB_LAST_SESSION_KEY, sessionId);
+      } catch (e) {
+        console.warn('session id save', e);
+      }
+    }
+  } catch (e) {
+    console.warn('Firestore session 저장 실패', e);
+  }
+}
+
+async function markCurrentSessionVisited() {
+  let sessionId = null;
+  try {
+    sessionId = localStorage.getItem(MB_LAST_SESSION_KEY);
+  } catch {
+    /* ignore */
+  }
+  if (!sessionId || typeof window.markSessionVisited !== 'function') return;
+  try {
+    await window.markSessionVisited(sessionId);
+  } catch (e) {
+    console.warn('Firestore session visited 업데이트 실패', e);
+  }
+}
 let P = { name: '명지인', tastes: [], home: '', diet: false };
 let tArr = [],
   hVal = '';
@@ -1377,6 +1428,8 @@ function buildAndRender(cur, curTxt, nxtTxt, gapMin, period, extra = {}) {
   const analyzeSource =
     extra.analyzeSource || extra.scheduleMeta?.gapSource || 'manual';
 
+  void persistAnalysisSession(cur, nextKey, gapMin);
+
   lastData = {
     analyzeSource,
     현재건물키: cur,
@@ -2629,9 +2682,11 @@ async function finishVisit(satisfaction) {
   weights[record.restaurant] = Math.min(1.5, (weights[record.restaurant] || 1) * 1.05);
   localStorage.setItem('restaurant_weights', JSON.stringify(weights));
 
+  await markCurrentSessionVisited();
+
   if (typeof window.saveVisitToFirestore === 'function') {
     try {
-      await window.saveVisitToFirestore(record);
+      await window.saveVisitToFirestore({ ...record, uid: getOrCreateUid() });
     } catch (e) {
       console.warn('Firestore 저장 실패', e);
     }

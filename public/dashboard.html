@@ -91,6 +91,7 @@
     @media (min-width: 720px) {
       .grid { grid-template-columns: 1fr 1fr; }
       .grid .wide { grid-column: 1 / -1; }
+      .summary-grid { grid-template-columns: repeat(4, 1fr); }
     }
     .card {
       background: #fff;
@@ -101,6 +102,7 @@
     }
     .card h2 { font-size: 14px; color: var(--navy); margin-bottom: 12px; }
     .chart-wrap { position: relative; height: 240px; }
+    .chart-wrap--sm { height: 200px; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
     th, td { padding: 8px 6px; border-bottom: 1px solid #f0f4fb; text-align: left; }
     th { color: var(--sub); font-weight: 600; }
@@ -142,6 +144,50 @@
       margin-bottom: 16px;
       line-height: 1.5;
     }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .stat-card {
+      background: #fff;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      padding: 14px 16px;
+      box-shadow: 0 2px 10px rgba(12, 36, 97, 0.06);
+    }
+    .stat-card .lbl { font-size: 11px; color: var(--sub); margin-bottom: 4px; }
+    .stat-card .val { font-size: 22px; font-weight: 700; color: var(--navy); }
+    .stat-card .sub { font-size: 10px; color: var(--sub); margin-top: 4px; }
+    .gap-bars { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+    .gap-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+    .gap-row .bar-bg {
+      flex: 1;
+      height: 10px;
+      background: #f1f5f9;
+      border-radius: 5px;
+      overflow: hidden;
+    }
+    .gap-row .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--navy), var(--blue));
+      border-radius: 5px;
+    }
+    .bld-list { list-style: none; font-size: 13px; }
+    .bld-list li {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #f0f4fb;
+    }
+    .bld-list li:last-child { border-bottom: none; }
+    .section-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--navy);
+      margin: 8px 0 12px;
+    }
   </style>
 </head>
 <body>
@@ -149,7 +195,7 @@
 <div class="gate" id="gate">
   <div class="gate-box">
     <div class="gate-title">🔒 개발자 대시보드</div>
-    <div class="gate-desc">방문 기록·혼잡도·만족도 피드백 집계 (개발팀 전용)<br>메인 앱(<a href="/" style="color:#2563eb">/</a>)에는 표시되지 않습니다.</div>
+    <div class="gate-desc">방문 기록·시간표 세션·혼잡도 집계 (개발팀 전용)<br>메인 앱(<a href="/" style="color:#2563eb">/</a>)에는 표시되지 않습니다.</div>
     <input class="gate-inp" id="pwIn" type="password" placeholder="비밀번호" autocomplete="off">
     <button class="gate-btn" type="button" id="pwBtn">입장</button>
     <div class="gate-err" id="pwErr"></div>
@@ -160,43 +206,66 @@
   <div class="hdr">
     <h1>📊 명비서 데이터 대시보드</h1>
     <p>
-      <span id="visitCount">0</span>건 ·
+      방문 <span id="visitCount">0</span>건 · 세션 <span id="sessionCount">0</span>건 ·
       <a href="/">← 메인 앱</a>
     </p>
     <div id="srcPills"></div>
   </div>
   <div id="loadMsg" class="loading">데이터 불러오는 중…</div>
   <div id="warnBox" class="warn-box" style="display:none"></div>
+
+  <div id="summarySection" style="display:none">
+    <div class="section-title">① 오늘 요약</div>
+    <div class="summary-grid" id="todaySummary"></div>
+    <div class="summary-grid" id="periodSummary" style="margin-top:0"></div>
+  </div>
+
   <div class="grid" id="charts" style="display:none">
-    <div class="card">
-      <h2>📊 식당별 총 방문 수</h2>
+    <div class="card wide">
+      <h2>② 식당별 방문 완료 수</h2>
       <div class="chart-wrap"><canvas id="chartRest"></canvas></div>
     </div>
-    <div class="card">
-      <h2>📅 요일별 방문 패턴</h2>
-      <div class="chart-wrap"><canvas id="chartDow"></canvas></div>
-    </div>
     <div class="card wide">
-      <h2>😊 식당별 만족도 (good / neutral / bad)</h2>
+      <h2>식당별 만족도 (😊 / 😐 / 😞)</h2>
       <div id="satBars"></div>
     </div>
     <div class="card wide">
-      <h2>🔥 시간대별 혼잡도 평균 (11~19시)</h2>
+      <h2>식당별 혼잡도 피드백 평균</h2>
+      <div id="restCrowdAvg"></div>
+    </div>
+    <div class="card wide">
+      <h2>③ 시간대별 방문 수 (11~19시)</h2>
+      <div class="chart-wrap chart-wrap--sm"><canvas id="chartHour"></canvas></div>
+    </div>
+    <div class="card wide">
+      <h2>시간대별 혼잡도 피드백 평균</h2>
       <div class="heat" id="heatRow"></div>
       <div style="display:flex;justify-content:space-between;margin-top:6px">
         <span class="heat-lbl">11시</span><span class="heat-lbl">13시</span><span class="heat-lbl">15시</span><span class="heat-lbl">17시</span><span class="heat-lbl">19시</span>
       </div>
     </div>
+    <div class="card">
+      <h2>📅 요일별 방문 패턴</h2>
+      <div class="chart-wrap chart-wrap--sm"><canvas id="chartDow"></canvas></div>
+    </div>
     <div class="card wide">
-      <h2>🕐 최근 방문 기록 20개</h2>
+      <h2>④ 최근 방문 기록 20건</h2>
       <div style="overflow-x:auto">
         <table>
           <thead>
-            <tr><th>시각</th><th>식당</th><th>혼잡도</th><th>만족도</th><th>출처</th></tr>
+            <tr><th>uid</th><th>시각</th><th>식당</th><th>혼잡도</th><th>만족도</th></tr>
           </thead>
           <tbody id="recentTbl"></tbody>
         </table>
       </div>
+    </div>
+    <div class="card">
+      <h2>⑤ 현재 위치 건물 Top 5</h2>
+      <ol class="bld-list" id="bldTop5"></ol>
+    </div>
+    <div class="card">
+      <h2>⑤ 공강 시간 분포</h2>
+      <div class="gap-bars" id="gapDist"></div>
     </div>
   </div>
 </div>
@@ -214,17 +283,72 @@
   } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
   const PASS = '31420';
+  const RESTS = ['기숙사', '명진당', '교직원', '학생회관'];
   const gate = document.getElementById('gate');
   const dash = document.getElementById('dash');
   const pwIn = document.getElementById('pwIn');
   const pwErr = document.getElementById('pwErr');
+  const chartInstances = [];
 
-  function normalizeRow(d, source) {
-    const tsRaw = d.timestamp;
-    const ts =
-      tsRaw?.toDate?.() ||
-      (tsRaw instanceof Date ? tsRaw : new Date(typeof tsRaw === 'number' ? tsRaw : tsRaw || Date.now()));
+  function parseTs(tsRaw) {
+    if (tsRaw?.toDate) return tsRaw.toDate();
+    if (tsRaw instanceof Date) return tsRaw;
+    if (typeof tsRaw === 'number') return new Date(tsRaw);
+    if (typeof tsRaw === 'string') return new Date(tsRaw);
+    return new Date();
+  }
+
+  function kstParts(d) {
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = Object.fromEntries(fmt.formatToParts(d).map((p) => [p.type, p.value]));
     return {
+      y: Number(parts.year),
+      m: Number(parts.month),
+      d: Number(parts.day),
+      h: Number(parts.hour),
+      dateKey: `${parts.year}-${parts.month}-${parts.day}`,
+    };
+  }
+
+  function isTodayKst(d) {
+    const now = kstParts(new Date());
+    const t = kstParts(d);
+    return now.dateKey === t.dateKey;
+  }
+
+  function daysSinceMondayKst(d) {
+    const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', weekday: 'long' }).format(d);
+    const map = { Monday: 0, Tuesday: 1, Wednesday: 2, Thursday: 3, Friday: 4, Saturday: 5, Sunday: 6 };
+    return map[wd] ?? 0;
+  }
+
+  function isThisWeekKst(d) {
+    const now = new Date();
+    const monday = new Date(now.getTime() - daysSinceMondayKst(now) * 86400000);
+    return kstParts(d).dateKey >= kstParts(monday).dateKey;
+  }
+
+  function uniqueUids(rows) {
+    return new Set(rows.map((r) => r.uid).filter(Boolean));
+  }
+
+  function pct(num, den) {
+    if (!den) return '0%';
+    return `${Math.round((num / den) * 100)}%`;
+  }
+
+  function normalizeVisit(d, source) {
+    const ts = parseTs(d.timestamp);
+    return {
+      uid: d.uid || '',
       restaurant: d.restaurant || '-',
       satisfaction: d.satisfaction || 'neutral',
       actualCrowd: Number(d.actualCrowd) || 40,
@@ -235,33 +359,41 @@
     };
   }
 
-  function loadLocalRows() {
+  function normalizeSession(d, source) {
+    const ts = parseTs(d.timestamp);
+    const buildings = Array.isArray(d.buildings) ? d.buildings : [];
+    return {
+      uid: d.uid || '',
+      buildings,
+      curBuilding: buildings[0] || '-',
+      gapMin: Number(d.gapMin) || 0,
+      visited: !!d.visited,
+      timestamp: ts,
+      source,
+    };
+  }
+
+  function loadLocalVisits() {
     const rows = [];
     const seen = new Set();
-
     function pushUnique(row) {
       const key = `${row.timestamp.getTime()}|${row.restaurant}|${row.actualCrowd}`;
       if (seen.has(key)) return;
       seen.add(key);
       rows.push(row);
     }
-
     try {
       JSON.parse(localStorage.getItem('visits') || '[]').forEach((d) => {
-        pushUnique(normalizeRow(d, 'local visits'));
+        pushUnique(normalizeVisit({ ...d, uid: d.uid || localStorage.getItem('mb_uid') || '' }, 'local'));
       });
     } catch (e) {
       console.warn('visits parse', e);
     }
-
     try {
       JSON.parse(localStorage.getItem('crowd_feedback') || '[]').forEach((d) => {
         pushUnique(
-          normalizeRow(
-            {
-              ...d,
-              satisfaction: d.satisfaction || 'neutral',
-            },
+          normalizeVisit(
+            { ...d, uid: localStorage.getItem('mb_uid') || '', satisfaction: d.satisfaction || 'neutral' },
             'local feedback',
           ),
         );
@@ -269,11 +401,10 @@
     } catch (e) {
       console.warn('crowd_feedback parse', e);
     }
-
     return rows;
   }
 
-  function mergeRows(localRows, remoteRows) {
+  function mergeVisits(localRows, remoteRows) {
     const seen = new Set(localRows.map((r) => `${r.timestamp.getTime()}|${r.restaurant}|${r.actualCrowd}`));
     const merged = [...localRows];
     for (const r of remoteRows) {
@@ -281,6 +412,284 @@
       if (!seen.has(key)) merged.push(r);
     }
     return merged.sort((a, b) => b.timestamp - a.timestamp);
+  }
+
+  function renderStatCard(lbl, val, sub) {
+    return `<div class="stat-card"><div class="lbl">${lbl}</div><div class="val">${val}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+  }
+
+  function renderSummary(sessions, visits) {
+    const todaySessions = sessions.filter((s) => isTodayKst(s.timestamp));
+    const todayVisits = visits.filter((v) => isTodayKst(v.timestamp));
+    const weekSessions = sessions.filter((s) => isThisWeekKst(s.timestamp));
+    const weekVisits = visits.filter((v) => isThisWeekKst(v.timestamp));
+
+    const todayUidSessions = uniqueUids(todaySessions);
+    const todayUidVisits = uniqueUids(todayVisits);
+    const todayUids = new Set([...todayUidSessions, ...todayUidVisits]);
+
+    const ttToday = todaySessions.length;
+    const visitDoneToday = todaySessions.filter((s) => s.visited).length;
+    const visitRecordsToday = todayVisits.length;
+
+    document.getElementById('todaySummary').innerHTML = [
+      renderStatCard('오늘 고유 방문자 (uid)', todayUids.size, '세션·방문 기록 합산 중복 제거'),
+      renderStatCard('오늘 시간표 입력', ttToday, 'sessions 컬렉션'),
+      renderStatCard('오늘 방문 완료', Math.max(visitDoneToday, visitRecordsToday), `세션 visited ${visitDoneToday} · 기록 ${visitRecordsToday}`),
+      renderStatCard('오늘 전환율', pct(Math.max(visitDoneToday, visitRecordsToday), ttToday || visitRecordsToday), '방문완료 ÷ 시간표입력'),
+    ].join('');
+
+    const allUids = uniqueUids([...sessions, ...visits.map((v) => ({ uid: v.uid }))]);
+    const weekUids = uniqueUids([...weekSessions, ...weekVisits.map((v) => ({ uid: v.uid }))]);
+
+    document.getElementById('periodSummary').innerHTML = [
+      renderStatCard('이번 주 고유 방문자', weekUids.size, '월요일(KST)부터'),
+      renderStatCard('전체 고유 방문자', allUids.size, '누적 uid'),
+      renderStatCard('이번 주 시간표 입력', weekSessions.length, ''),
+      renderStatCard('전체 방문 완료', visits.length, `세션 visited ${sessions.filter((s) => s.visited).length}건`),
+    ].join('');
+
+    document.getElementById('summarySection').style.display = 'block';
+  }
+
+  function gapBucket(gapMin) {
+    if (gapMin < 60) return '45분대';
+    if (gapMin < 105) return '75분대';
+    return '120분+';
+  }
+
+  function renderTimetablePatterns(sessions) {
+    const bldCounts = {};
+    const gapCounts = { '45분대': 0, '75분대': 0, '120분+': 0 };
+    sessions.forEach((s) => {
+      const b = s.curBuilding;
+      if (b && b !== '-') bldCounts[b] = (bldCounts[b] || 0) + 1;
+      gapCounts[gapBucket(s.gapMin)] = (gapCounts[gapBucket(s.gapMin)] || 0) + 1;
+    });
+    const top5 = Object.entries(bldCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+    document.getElementById('bldTop5').innerHTML = top5.length
+      ? top5.map(([name, cnt], i) => `<li><span>${i + 1}. ${name}</span><strong>${cnt}</strong></li>`).join('')
+      : '<li style="color:var(--sub)">시간표 세션 없음</li>';
+
+    const gapMax = Math.max(1, ...Object.values(gapCounts));
+    document.getElementById('gapDist').innerHTML = Object.entries(gapCounts)
+      .map(([label, cnt]) => {
+        const w = Math.round((cnt / gapMax) * 100);
+        return `<div class="gap-row"><span style="width:52px">${label}</span><div class="bar-bg"><div class="bar-fill" style="width:${w}%"></div></div><strong>${cnt}</strong></div>`;
+      })
+      .join('');
+  }
+
+  function destroyCharts() {
+    chartInstances.forEach((c) => c.destroy());
+    chartInstances.length = 0;
+  }
+
+  function renderCharts(visits, sessions) {
+    destroyCharts();
+
+    const restCounts = Object.fromEntries(RESTS.map((r) => [r, 0]));
+    visits.forEach((r) => {
+      if (restCounts[r.restaurant] != null) restCounts[r.restaurant]++;
+    });
+
+    chartInstances.push(
+      new Chart(document.getElementById('chartRest'), {
+        type: 'bar',
+        data: {
+          labels: RESTS,
+          datasets: [{
+            label: '방문 완료',
+            data: RESTS.map((r) => restCounts[r]),
+            backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'],
+          }],
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
+      }),
+    );
+
+    const hours = [];
+    for (let h = 11; h <= 19; h++) hours.push(h);
+    const hourCounts = hours.map((h) => visits.filter((r) => r.hour === h).length);
+    chartInstances.push(
+      new Chart(document.getElementById('chartHour'), {
+        type: 'bar',
+        data: {
+          labels: hours.map((h) => `${h}시`),
+          datasets: [{ label: '방문 수', data: hourCounts, backgroundColor: '#2563eb' }],
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
+      }),
+    );
+
+    const dowLabels = ['일', '월', '화', '수', '목', '금', '토'];
+    const dowCounts = [0, 0, 0, 0, 0, 0, 0];
+    visits.forEach((r) => {
+      if (r.dow >= 0 && r.dow <= 6) dowCounts[r.dow]++;
+    });
+    chartInstances.push(
+      new Chart(document.getElementById('chartDow'), {
+        type: 'bar',
+        data: {
+          labels: dowLabels,
+          datasets: [{ label: '방문 수', data: dowCounts, backgroundColor: '#64748b' }],
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
+      }),
+    );
+
+    document.getElementById('satBars').innerHTML = RESTS.map((rest) => {
+      const subset = visits.filter((r) => r.restaurant === rest);
+      const total = subset.length || 1;
+      const g = subset.filter((r) => r.satisfaction === 'good').length;
+      const n = subset.filter((r) => r.satisfaction === 'neutral').length;
+      const b = subset.filter((r) => r.satisfaction === 'bad').length;
+      return `<div style="margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:4px">${rest} (${subset.length}건)</div>
+        <div class="sat-bar">
+          <span class="sat-pill sat-good">😊 ${Math.round((g / total) * 100)}%</span>
+          <span class="sat-pill sat-neutral">😐 ${Math.round((n / total) * 100)}%</span>
+          <span class="sat-pill sat-bad">😞 ${Math.round((b / total) * 100)}%</span>
+        </div>
+      </div>`;
+    }).join('');
+
+    document.getElementById('restCrowdAvg').innerHTML = RESTS.map((rest) => {
+      const subset = visits.filter((r) => r.restaurant === rest);
+      if (!subset.length) return `<div style="font-size:12px;color:var(--sub);margin-bottom:6px">${rest}: 기록 없음</div>`;
+      const avg = subset.reduce((s, r) => s + r.actualCrowd, 0) / subset.length;
+      const lbl = avg <= 20 ? '한산' : avg <= 50 ? '보통' : avg <= 75 ? '혼잡' : '매우혼잡';
+      return `<div style="font-size:12px;margin-bottom:6px"><b>${rest}</b> 평균 ${Math.round(avg)} (${lbl}) · ${subset.length}건</div>`;
+    }).join('');
+
+    const hourAvg = hours.map((h) => {
+      const subset = visits.filter((r) => r.hour === h);
+      if (!subset.length) return null;
+      return subset.reduce((s, r) => s + r.actualCrowd, 0) / subset.length;
+    });
+    document.getElementById('heatRow').innerHTML = hours
+      .map((h, i) => {
+        const v = hourAvg[i];
+        const bg = v == null ? '#e2e8f0' : v < 35 ? '#86efac' : v < 60 ? '#fde047' : v < 80 ? '#fb923c' : '#ef4444';
+        const txt = v == null ? '-' : Math.round(v);
+        return `<div class="heat-cell" style="background:${bg}" title="${h}시">${txt}</div>`;
+      })
+      .join('');
+
+    const satLabel = { good: '😊', neutral: '😐', bad: '😞' };
+    const crowdLabel = (v) => (v <= 20 ? '한산' : v <= 50 ? '보통' : v <= 75 ? '혼잡' : '매우혼잡');
+    const uidShort = (uid) => (uid ? String(uid).slice(0, 8) : '-');
+    document.getElementById('recentTbl').innerHTML = visits.slice(0, 20).map(
+      (r) => `<tr>
+        <td><code>${uidShort(r.uid)}</code></td>
+        <td>${r.timestamp.toLocaleString('ko-KR')}</td>
+        <td>${r.restaurant}</td>
+        <td>${crowdLabel(r.actualCrowd)} (${r.actualCrowd})</td>
+        <td>${satLabel[r.satisfaction] || r.satisfaction}</td>
+      </tr>`,
+    ).join('');
+
+    renderTimetablePatterns(sessions);
+  }
+
+  async function fetchFirestoreCollection(db, name) {
+    try {
+      const snap = await getDocs(query(collection(db, name), orderBy('timestamp', 'desc'), limit(1000)));
+      return { rows: snap.docs.map((doc) => doc.data()), ok: true, err: null };
+    } catch (e) {
+      console.warn(`Firestore ${name}`, e);
+      try {
+        const snap = await getDocs(collection(db, name));
+        return { rows: snap.docs.map((doc) => doc.data()), ok: true, err: e.message };
+      } catch (e2) {
+        return { rows: [], ok: false, err: e2.message };
+      }
+    }
+  }
+
+  async function boot() {
+    const localVisits = loadLocalVisits();
+    let remoteVisits = [];
+    let remoteSessions = [];
+    let visitErr = null;
+    let sessionErr = null;
+    let visitOk = false;
+    let sessionOk = false;
+
+    let firebaseConfig = { projectId: 'myeong-biseo-v2' };
+    try {
+      const res = await fetch('/__/firebase/init.json');
+      if (res.ok) firebaseConfig = await res.json();
+    } catch (e) {
+      console.warn('init.json', e);
+    }
+
+    const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+
+    try {
+      const app = initializeApp(firebaseConfig);
+      const db = getFirestore(app);
+      if (isLocal) {
+        try {
+          connectFirestoreEmulator(db, '127.0.0.1', 8080);
+        } catch (e) {
+          console.warn('Firestore emulator', e.message);
+        }
+      }
+      const [vRes, sRes] = await Promise.all([
+        fetchFirestoreCollection(db, 'visits'),
+        fetchFirestoreCollection(db, 'sessions'),
+      ]);
+      remoteVisits = vRes.rows.map((d) => normalizeVisit(d, 'Firestore'));
+      remoteSessions = sRes.rows.map((d) => normalizeSession(d, 'Firestore'));
+      visitOk = vRes.ok;
+      sessionOk = sRes.ok;
+      visitErr = vRes.err;
+      sessionErr = sRes.err;
+    } catch (e) {
+      visitErr = e.message;
+      sessionErr = e.message;
+      console.warn('Firestore init', e);
+    }
+
+    const visits = mergeVisits(localVisits, remoteVisits);
+    const sessions = remoteSessions.sort((a, b) => b.timestamp - a.timestamp);
+
+    const pills = [];
+    if (localVisits.length) pills.push(`로컬 방문 ${localVisits.length}건`);
+    if (visitOk && remoteVisits.length) pills.push(`Firestore 방문 ${remoteVisits.length}건`);
+    if (visitOk && !remoteVisits.length) pills.push('Firestore 방문 0건');
+    if (sessionOk && remoteSessions.length) pills.push(`Firestore 세션 ${remoteSessions.length}건`);
+    if (sessionOk && !remoteSessions.length) pills.push('Firestore 세션 0건');
+    document.getElementById('srcPills').innerHTML = pills.map((t) => `<span class="src-pill">${t}</span>`).join('');
+
+    const warnBox = document.getElementById('warnBox');
+    const hasAny = visits.length || sessions.length;
+    if (!hasAny) {
+      warnBox.style.display = 'block';
+      warnBox.innerHTML =
+        '표시할 데이터가 없습니다.<br>① 메인 앱에서 시간표 분석 후 「방문 완료 기록」을 남기거나<br>② Firebase Hosting으로 열면 Firestore에 저장됩니다.';
+      if (visitErr || sessionErr) {
+        warnBox.innerHTML += `<br><br>Firestore: ${visitErr || sessionErr}`;
+      }
+    } else if ((visitErr || sessionErr) && !remoteVisits.length && !remoteSessions.length && localVisits.length) {
+      warnBox.style.display = 'block';
+      warnBox.textContent = `Firestore 연결 실패 — 이 브라우저 로컬 기록만 표시 중 (${visitErr || sessionErr})`;
+    } else {
+      warnBox.style.display = 'none';
+    }
+
+    document.getElementById('loadMsg').style.display = 'none';
+    document.getElementById('visitCount').textContent = String(visits.length);
+    document.getElementById('sessionCount').textContent = String(sessions.length);
+
+    renderSummary(sessions, visits);
+
+    const showCharts = visits.length || sessions.length;
+    document.getElementById('charts').style.display = showCharts ? 'grid' : 'none';
+    if (showCharts) renderCharts(visits, sessions);
   }
 
   if (sessionStorage.getItem('mb_dash_ok') === '1') {
@@ -305,163 +714,6 @@
   pwIn.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') tryLogin();
   });
-
-  async function boot() {
-    const localRows = loadLocalRows();
-    let remoteRows = [];
-    let remoteErr = null;
-    let remoteOk = false;
-
-    let firebaseConfig = { projectId: 'myeong-biseo-v2' };
-    try {
-      const res = await fetch('/__/firebase/init.json');
-      if (res.ok) firebaseConfig = await res.json();
-    } catch (e) {
-      console.warn('init.json', e);
-    }
-
-    const isLocal =
-      location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-
-    try {
-      const app = initializeApp(firebaseConfig);
-      const db = getFirestore(app);
-      if (isLocal) {
-        try {
-          connectFirestoreEmulator(db, '127.0.0.1', 8080);
-        } catch (e) {
-          console.warn('Firestore emulator', e.message);
-        }
-      }
-      const snap = await getDocs(query(collection(db, 'visits'), orderBy('timestamp', 'desc'), limit(500)));
-      snap.forEach((doc) => {
-        remoteRows.push(normalizeRow(doc.data(), 'Firestore'));
-      });
-      remoteOk = true;
-    } catch (e) {
-      remoteErr = e.message;
-      console.warn('Firestore', e);
-    }
-
-    const rows = mergeRows(localRows, remoteRows);
-    const srcPills = document.getElementById('srcPills');
-    const pills = [];
-    if (localRows.length) pills.push(`로컬 ${localRows.length}건`);
-    if (remoteOk && remoteRows.length) pills.push(`Firestore ${remoteRows.length}건`);
-    if (remoteOk && !remoteRows.length) pills.push('Firestore 0건');
-    srcPills.innerHTML = pills.map((t) => `<span class="src-pill">${t}</span>`).join('');
-
-    const warnBox = document.getElementById('warnBox');
-    if (!rows.length) {
-      warnBox.style.display = 'block';
-      warnBox.innerHTML =
-        '표시할 방문 기록이 없습니다.<br>① 메인 앱(<a href="/">/</a>) → 식당 탭 → 「방문 완료 기록」으로 피드백을 남기거나<br>② Firebase Hosting으로 열면 Firestore에도 저장됩니다.';
-      if (remoteErr) {
-        warnBox.innerHTML += `<br><br>Firestore: ${remoteErr}`;
-      }
-    } else if (remoteErr && !remoteRows.length && localRows.length) {
-      warnBox.style.display = 'block';
-      warnBox.textContent = `Firestore 연결 실패 — 이 브라우저 로컬 기록만 표시 중 (${remoteErr})`;
-    } else {
-      warnBox.style.display = 'none';
-    }
-
-    document.getElementById('loadMsg').style.display = 'none';
-    document.getElementById('charts').style.display = rows.length ? 'grid' : 'none';
-    document.getElementById('visitCount').textContent = String(rows.length);
-    if (rows.length) renderCharts(rows);
-  }
-
-  function renderCharts(rows) {
-    const rests = ['기숙사', '명진당', '교직원', '학생회관'];
-    const restCounts = Object.fromEntries(rests.map((r) => [r, 0]));
-    rows.forEach((r) => {
-      if (restCounts[r.restaurant] != null) restCounts[r.restaurant]++;
-    });
-
-    new Chart(document.getElementById('chartRest'), {
-      type: 'bar',
-      data: {
-        labels: rests,
-        datasets: [{
-          label: '방문 수',
-          data: rests.map((r) => restCounts[r]),
-          backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'],
-        }],
-      },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
-    });
-
-    const dowLabels = ['일', '월', '화', '수', '목', '금', '토'];
-    const dowCounts = [0, 0, 0, 0, 0, 0, 0];
-    rows.forEach((r) => {
-      if (r.dow >= 0 && r.dow <= 6) dowCounts[r.dow]++;
-    });
-    new Chart(document.getElementById('chartDow'), {
-      type: 'bar',
-      data: {
-        labels: dowLabels,
-        datasets: [{
-          label: '방문 수',
-          data: dowCounts,
-          backgroundColor: '#2563eb',
-        }],
-      },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
-    });
-
-    const satHtml = rests
-      .map((rest) => {
-        const subset = rows.filter((r) => r.restaurant === rest);
-        const total = subset.length || 1;
-        const g = subset.filter((r) => r.satisfaction === 'good').length;
-        const n = subset.filter((r) => r.satisfaction === 'neutral').length;
-        const b = subset.filter((r) => r.satisfaction === 'bad').length;
-        return `<div style="margin-bottom:10px">
-          <div style="font-size:12px;font-weight:700;margin-bottom:4px">${rest} (${subset.length}건)</div>
-          <div class="sat-bar">
-            <span class="sat-pill sat-good">good ${Math.round((g / total) * 100)}%</span>
-            <span class="sat-pill sat-neutral">neutral ${Math.round((n / total) * 100)}%</span>
-            <span class="sat-pill sat-bad">bad ${Math.round((b / total) * 100)}%</span>
-          </div>
-        </div>`;
-      })
-      .join('');
-    document.getElementById('satBars').innerHTML = satHtml;
-
-    const hours = [];
-    for (let h = 11; h <= 19; h++) hours.push(h);
-    const hourAvg = hours.map((h) => {
-      const subset = rows.filter((r) => r.hour === h);
-      if (!subset.length) return null;
-      return subset.reduce((s, r) => s + r.actualCrowd, 0) / subset.length;
-    });
-    const heatRow = document.getElementById('heatRow');
-    heatRow.innerHTML = hours
-      .map((h, i) => {
-        const v = hourAvg[i];
-        const bg = v == null ? '#e2e8f0' : v < 35 ? '#86efac' : v < 60 ? '#fde047' : v < 80 ? '#fb923c' : '#ef4444';
-        const txt = v == null ? '-' : Math.round(v);
-        return `<div class="heat-cell" style="background:${bg}">${txt}</div>`;
-      })
-      .join('');
-
-    const satLabel = { good: '😊', neutral: '😐', bad: '😞' };
-    const crowdLabel = (v) => (v <= 20 ? '한산' : v <= 50 ? '보통' : v <= 75 ? '혼잡' : '매우혼잡');
-    const recent = [...rows].slice(0, 20);
-    document.getElementById('recentTbl').innerHTML = recent
-      .map(
-        (r) =>
-          `<tr>
-            <td>${r.timestamp.toLocaleString('ko-KR')}</td>
-            <td>${r.restaurant}</td>
-            <td>${crowdLabel(r.actualCrowd)} (${r.actualCrowd})</td>
-            <td>${satLabel[r.satisfaction] || r.satisfaction}</td>
-            <td>${r.source || '-'}</td>
-          </tr>`,
-      )
-      .join('');
-  }
 </script>
 </body>
 </html>
