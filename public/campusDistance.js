@@ -5,6 +5,28 @@
 window.CampusDistance = (function () {
   const EAT_MIN = 15;
 
+  /** 수업 건물 표시명 (내부 키는 TO_REST·B2B와 동일) */
+  const BUILDING_LABELS = {
+    '1공': '제1공학관 (Y_)',
+    '2공': '제2공학관',
+    '3공': '제3공학관 (Y19)',
+    '5공': '제5공학관 (Y5)',
+    명진당: '명진당 (Y3)',
+    공2: '제2공학관 (Y8)',
+    자연: '항박관 (Y9)',
+    학생: '학생복지관 (Y21)',
+    창조: '창조예술관 (Y2)',
+    채플: '채플관 (Y22)',
+  };
+
+  /** 식당 표시명 (내부 키는 REST_KEYS·TO_REST 열과 동일, Y1=학생회관 식당) */
+  const RESTAURANT_LABELS = {
+    기숙사: '기숙사식당',
+    명진당: '명진당',
+    교직원: '교직원식당',
+    학생회관: '학생회관 식당 (Y1)',
+  };
+
   /** 수업 건물 → 식당 (편도 분) */
   const TO_REST = {
     '1공': { 기숙사: 11, 명진당: 8, 교직원: 5, 학생회관: 7 },
@@ -282,6 +304,8 @@ window.CampusDistance = (function () {
 
   return {
     EAT_MIN,
+    BUILDING_LABELS,
+    RESTAURANT_LABELS,
     TO_REST,
     B2B,
     REST_KEYS,

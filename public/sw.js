@@ -4,7 +4,7 @@
  * - HTML/JS: 네트워크 우선 (배포 후에도 예전 app.js가 안 남게)
  * - API: 캐시 안 함
  */
-const SW_VERSION = 'mb-pwa-9';
+const SW_VERSION = 'mb-pwa-10';
 const STATIC_CACHE = `static-${SW_VERSION}`;
 const SHELL_CACHE = `shell-${SW_VERSION}`;
 
@@ -67,15 +67,25 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+/** ?v= 쿼리마다 다른 캐시 키가 생기지 않게 JS 경로는 pathname 기준 */
+function cacheRequestFor(request) {
+  const url = new URL(request.url);
+  if (isAppScript(url.pathname)) {
+    return new Request(url.pathname, { method: 'GET' });
+  }
+  return request;
+}
+
 /** JS/HTML은 항상 네트워크 먼저 — stale 캐시로 구버전이 안 보이게 */
 async function networkFirst(request, cacheName) {
   const cache = await caches.open(cacheName);
+  const cacheKey = cacheRequestFor(request);
   try {
     const response = await fetch(request);
-    if (response.ok) cache.put(request, response.clone());
+    if (response.ok) cache.put(cacheKey, response.clone());
     return response;
   } catch {
-    const cached = await cache.match(request);
+    const cached = await cache.match(cacheKey);
     if (cached) return cached;
     throw new Error('offline');
   }

@@ -667,10 +667,32 @@ html.ob-lock,html.ob-lock body{overflow:hidden}
 <script src="/utils.js?v=20260522-fix3"></script>
 <script src="/kst.js?v=20260523-beta1" defer></script>
 <script src="/schoolCalendar.js?v=20260522-fix3" defer></script>
-<script src="/campusDistance.js?v=20260524-rank6" defer></script>
+<script src="/campusDistance.js?v=20260524-rank7" defer></script>
 <script src="/timetable.js?v=20260524-gapui" defer></script>
 <script src="/mealEngine.js?v=20260522-fix3" defer></script>
-<script src="/app.js?v=20260524-rank6" defer></script>
-<script src="/pwa-register.js?v=20260522-fix2" defer></script>
+<script src="/app.js?v=20260524-rank7" defer></script>
+<script src="/pwa-register.js?v=20260524-pwa10" defer></script>
+<script>
+(function () {
+  function healStaleApp() {
+    if (typeof goTab === 'function') return;
+    var once = sessionStorage.getItem('mb_sw_heal');
+    if (once) return;
+    sessionStorage.setItem('mb_sw_heal', '1');
+    if (!('serviceWorker' in navigator)) {
+      location.reload();
+      return;
+    }
+    navigator.serviceWorker.getRegistrations().then(function (regs) {
+      return Promise.all(regs.map(function (r) { return r.unregister(); }));
+    }).finally(function () {
+      location.reload();
+    });
+  }
+  window.addEventListener('load', function () {
+    setTimeout(healStaleApp, 1800);
+  });
+})();
+</script>
 </body>
 </html>

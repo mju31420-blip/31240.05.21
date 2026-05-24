@@ -32,16 +32,16 @@ function purgeLegacyDevSampleFromStorage() {
 
 /** 수동 입력·OCR 공통 캠퍼스 건물 (표시 순) */
 const CAMPUS_BUILDINGS = [
-  { key: '1공', label: '제1공학관' },
+  { key: '1공', label: '제1공학관 (Y_)' },
   { key: '2공', label: '제2공학관' },
   { key: '3공', label: '제3공학관 (Y19)' },
   { key: '5공', label: '제5공학관 (Y5)' },
-  { key: '공2', label: '공학2관 (Y11)' },
+  { key: '공2', label: '제2공학관 (Y8)' },
   { key: '명진당', label: '명진당 (Y3)' },
-  { key: '자연', label: '자연과학관 (Y7)' },
-  { key: '학생', label: '학생회관 (Y21)' },
-  { key: '창조', label: '창조관' },
-  { key: '채플', label: '채플관' },
+  { key: '자연', label: '항박관 (Y9)' },
+  { key: '학생', label: '학생복지관 (Y21)' },
+  { key: '창조', label: '창조예술관 (Y2)' },
+  { key: '채플', label: '채플관 (Y22)' },
 ];
 
 const BUILDING_LABELS = Object.fromEntries(CAMPUS_BUILDINGS.map((b) => [b.key, b.label]));
@@ -54,7 +54,7 @@ const BUILDING_ALIASES = {
   공2: ['공2', '공학2관', 'Y11', 'Y9'],
   명진당: ['명진당', '명진', 'Y3'],
   자연: ['자연', '자연과학관', 'Y7', 'Y25'],
-  학생: ['학생', '학생회관', 'Y21', 'Y22'],
+  학생: ['학생', '학생복지관', 'Y21'],
   창조: ['창조', '창조관', '창의', '혁신'],
   채플: ['채플', '채플관', '예배'],
 };
@@ -771,13 +771,13 @@ function formatGapDetail(snap, refDate = null) {
 function populateBuildingSelects() {
   const buildings = [
     { value: '3공', label: '제3공학관 (Y19)' },
-    { value: '1공', label: '제1공학관 (Y12)' },
-    { value: '창조관', label: '창조관 (Y25)' },
+    { value: '1공', label: '제1공학관 (Y_)' },
+    { value: '창조관', label: '창조예술관 (Y2)' },
     { value: '5공', label: '제5공학관 (Y5)' },
-    { value: '공2', label: '공학2관 (Y11)' },
-    { value: '자연', label: '자연과학관 (Y9)' },
-    { value: '명진당', label: '명진당 (Y2)' },
-    { value: '학생', label: '학생회관 (Y21)' },
+    { value: '공2', label: '제2공학관 (Y8)' },
+    { value: '자연', label: '항박관 (Y9)' },
+    { value: '명진당', label: '명진당 (Y3)' },
+    { value: '학생', label: '학생복지관 (Y21)' },
     { value: '채플관', label: '채플관 (Y22)' },
   ];
   const noneOpt = '<option value="none">없음 (하교)</option>';
