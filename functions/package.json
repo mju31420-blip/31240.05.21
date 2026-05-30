@@ -4,10 +4,11 @@
   "type": "module",
   "main": "index.js",
   "engines": {
-    "node": "24"
+    "node": "22"
   },
   "scripts": {
-    "lint": "node -e \"const fs=require('fs');const p=require('path');const dir=p.join('data');fs.mkdirSync(dir,{recursive:true});['lecture_db.json','class_periods.json'].forEach(f=>{const src=p.join('..','public','data',f);const dst=p.join(dir,f);if(fs.existsSync(src))fs.copyFileSync(src,dst);});console.log('ok')\"",
+    "sync-data": "node -e \"const fs=require('fs');const p=require('path');const dir=p.join('data');fs.mkdirSync(dir,{recursive:true});['lecture_db.json','class_periods.json'].forEach(f=>{const src=p.join('..','public','data',f);const dst=p.join(dir,f);if(fs.existsSync(src))fs.copyFileSync(src,dst);});console.log('data synced')\"",
+    "lint": "node -e \"const {spawnSync}=require('child_process');const fs=require('fs');const files=['index.js',...fs.readdirSync('services').filter(f=>f.endsWith('.js')).map(f=>'services/'+f)];for(const f of files){const r=spawnSync(process.execPath,['--check',f],{stdio:'inherit'});if(r.status)process.exit(r.status);}console.log('syntax ok')\"",
     "serve": "firebase emulators:start --only functions",
     "shell": "firebase functions:shell"
   },

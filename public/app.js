@@ -270,7 +270,22 @@ let menuMeta = { updatedAt: null, ready: false, loading: false };
 
 const MENU_RESTAURANT_KEYS = ['기숙사', '명진당', '교직원', '학생회관'];
 
-/** API·JSON은 요일 키가 문자열("1")인 경우가 많음 → 숫자 0~6으로 통일 */
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+  ));
+}
+
+function htmlWithBreaks(value) {
+  return escapeHtml(value).replace(/\n/g, '<br>');
+}
+
+function safeHttpUrl(value) {
+  const url = String(value || '').trim();
+  return /^https?:\/\//i.test(url) ? escapeHtml(url) : '#';
+}
+
+/** API·JSON은 MM-DD 날짜 키와 요일 키를 모두 보존 */
 function normalizeMenusPayload(raw) {
   const src = raw && typeof raw === 'object' ? raw : {};
   const out = {};
@@ -293,7 +308,8 @@ function normalizeMenusPayload(raw) {
         days[dk] = normalizeDaySlots(slots);
         continue;
       }
-      const dow = parseInt(dk, 10);
+      if (!/^\d+$/.test(dk)) continue;
+      const dow = Number(dk);
       if (Number.isNaN(dow) || dow < 0 || dow > 6) continue;
       days[dow] = normalizeDaySlots(slots);
     }
@@ -316,7 +332,6 @@ function menuDateKey(refDate) {
   return `${mm}-${dd}`;
 }
 
-/** dayOffset: 0=오늘, 1=내일 (KST 기준) */
 function menuRefDate(dayOffset = 0) {
   const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
   const target = new Date(ref.getTime());
@@ -324,18 +339,36 @@ function menuRefDate(dayOffset = 0) {
   return target;
 }
 
-function getMenuDayData(restaurantDays, refOrDow) {
+function getNearestDateKeyData(restaurantDays, ref) {
+  const refTime = ref.getTime();
+  const year = ref.getFullYear();
+  let best = null;
+  let bestDiff = Infinity;
+  for (const key of Object.keys(restaurantDays)) {
+    const m = /^(\d{2})-(\d{2})$/.exec(key);
+    if (!m) continue;
+    const mm = Number(m[1]);
+    const dd = Number(m[2]);
+    for (const y of [year - 1, year, year + 1]) {
+      const diff = Math.abs(new Date(y, mm - 1, dd).getTime() - refTime);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = restaurantDays[key];
+      }
+    }
+  }
+  return best;
+}
+
+function getMenuDayData(restaurantDays, refOrOffset = 0) {
   if (!restaurantDays) return null;
-  const ref =
-    refOrDow instanceof Date
-      ? refOrDow
-      : typeof refOrDow === 'number'
-        ? menuRefDate(refOrDow)
-        : menuRefDate(0);
+  const ref = refOrOffset instanceof Date ? refOrOffset : menuRefDate(Number(refOrOffset) || 0);
   const dateKey = menuDateKey(ref);
   if (restaurantDays[dateKey]) return restaurantDays[dateKey];
   const dow = ref.getDay();
-  return restaurantDays[dow] ?? restaurantDays[String(dow)] ?? null;
+  const dowData = restaurantDays[dow] ?? restaurantDays[String(dow)];
+  if (dowData) return dowData;
+  return getNearestDateKeyData(restaurantDays, ref) ?? null;
 }
 
 /* ════════════════════════════ CAMPUS SCHEDULE / CROWD ════ */
@@ -344,146 +377,9 @@ let CAMPUS_SCHEDULE = null;
 /** 개인 시간표로 혼잡도 전환하기 전 최소 집계 수 (추후 Firestore 연동) */
 const TIMETABLE_CROWD_MIN_POOL = 1000;
 
-/** 수업 종료 → 식당 도착 예측: 현재 시각 기준 집계 구간 (분) */
-const CROWD_ARRIVAL_WINDOW = { beforeMin: 5, afterMin: 15 };
-
-/** campus_schedule 건물 키 → 도보 시간표 키 */
-const SCHEDULE_BUILDING_WALK_ALIAS = { '2공': '제2공학관' };
-
-/** 건물→식당 도보(분, 짐 챙기기 2분 포함) */
-const CAFETERIA_WALK_TO_REST = {
-  기숙사: {
-    '3공': 9,
-    '5공': 6,
-    자연: 5,
-    채플관: 4,
-    창조관: 6,
-    체육관: 7,
-    체육문화관: 7,
-    학군단: 6,
-    선수숙소: 8,
-    명진당: 7,
-    차세대학과관: 8,
-    디자인조형센터: 10,
-    제4공학관: 10,
-    건축도시설계원: 9,
-    학생: 5,
-    제2공학관: 8,
-    '2공': 8,
-    하이브리드구조실험센터: 8,
-    산업협력관: 9,
-    '1공': 4,
-  },
-  명진당: {
-    '3공': 7,
-    '5공': 3,
-    자연: 4,
-    채플관: 5,
-    창조관: 5,
-    체육관: 5,
-    체육문화관: 5,
-    학군단: 5,
-    선수숙소: 7,
-    명진당: 3,
-    차세대학과관: 4,
-    디자인조형센터: 6,
-    제4공학관: 7,
-    건축도시설계원: 5,
-    학생: 4,
-    제2공학관: 4,
-    '2공': 4,
-    하이브리드구조실험센터: 4,
-    산업협력관: 4,
-    '1공': 4,
-  },
-  교직원: {
-    '3공': 6,
-    '5공': 3,
-    자연: 4,
-    채플관: 5,
-    창조관: 5,
-    체육관: 5,
-    체육문화관: 5,
-    학군단: 5,
-    선수숙소: 7,
-    명진당: 3,
-    차세대학과관: 4,
-    디자인조형센터: 6,
-    제4공학관: 7,
-    건축도시설계원: 5,
-    학생: 3,
-    제2공학관: 4,
-    '2공': 4,
-    하이브리드구조실험센터: 4,
-    산업협력관: 5,
-    '1공': 4,
-  },
-  학생회관: {
-    '3공': 9,
-    '5공': 3,
-    자연: 4,
-    채플관: 4,
-    창조관: 4,
-    체육관: 5,
-    체육문화관: 4,
-    학군단: 5,
-    선수숙소: 6,
-    명진당: 4,
-    차세대학과관: 5,
-    디자인조형센터: 8,
-    제4공학관: 9,
-    건축도시설계원: 6,
-    학생: 3,
-    제2공학관: 6,
-    '2공': 6,
-    하이브리드구조실험센터: 4,
-    산업협력관: 6,
-    '1공': 3,
-  },
-};
-
-function scheduleTimeKeyToMinutes(timeKey) {
-  const [h, m] = String(timeKey).split(':').map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return null;
-  return h * 60 + m;
-}
-
-function getWalkMinToRestaurant(restaurantKey, buildingKey) {
-  const walkMap = CAFETERIA_WALK_TO_REST[restaurantKey];
-  if (!walkMap) return null;
-  const walkKey = SCHEDULE_BUILDING_WALK_ALIAS[buildingKey] || buildingKey;
-  return walkMap[walkKey] ?? walkMap[buildingKey] ?? null;
-}
-
-/** campus_schedule: 종료 시각+도보 → 도착 시각이 [now-5분, now+15분]인 학생 수 합 */
-function countScheduleArrivalsAtRestaurant(restaurantKey, refDate) {
-  const dow = refDate.getDay();
-  const daySchedule = CAMPUS_SCHEDULE?.[dow];
-  if (!daySchedule || typeof daySchedule !== 'object') return 0;
-
-  const nowMin = refDate.getHours() * 60 + refDate.getMinutes();
-  const winStart = nowMin - CROWD_ARRIVAL_WINDOW.beforeMin;
-  const winEnd = nowMin + CROWD_ARRIVAL_WINDOW.afterMin;
-  let total = 0;
-
-  for (const [timeKey, buildings] of Object.entries(daySchedule)) {
-    const endMin = scheduleTimeKeyToMinutes(timeKey);
-    if (endMin == null || !buildings || typeof buildings !== 'object') continue;
-    for (const [bldg, count] of Object.entries(buildings)) {
-      const n = Number(count);
-      if (!n) continue;
-      const walkMin = getWalkMinToRestaurant(restaurantKey, bldg);
-      if (walkMin == null) continue;
-      const arrivalMin = endMin + walkMin;
-      if (arrivalMin >= winStart && arrivalMin <= winEnd) total += n;
-    }
-  }
-  return total;
-}
-
 /**
  * [혼잡도 예측 — campus_schedule.json 우선]
- * 강의 종료 시각 + 건물별 식당 도보 시간으로 도착 예상 인원을 집계합니다.
+ * 강의 스케줄(학기 시간표 집계) + 방문 피드백으로 식당 혼잡도를 추정합니다.
  * 개인 OCR 시간표는 공강·요일·동선 분석에만 쓰고, 혼잡도는 pool ≥ 1000 이후 전환.
  */
 async function loadCampusSchedule() {
@@ -517,10 +413,10 @@ function getDynamicCrowd(restaurantKey) {
   const CROWD_BASE = { 기숙사: 40, 명진당: 45, 교직원: 25, 학생회관: 35 };
 
   const NEARBY = {
-    기숙사: ['자연', '명진당', '1공'],
-    명진당: ['명진당', '자연', '5공', '3공'],
-    교직원: ['명진당', '자연', '5공'],
-    학생회관: ['학생', '자연', '5공', '3공'],
+    기숙사: ['자연', '명진당', '1공', '채플관', '창조관', '체육관', '체육문화관', '학군단', '선수숙소'],
+  명진당: ['명진당', '자연', '5공', '3공', '채플관', '창조관', '차세대학과관', '디자인조형센터', '제4공학관', '건축도시설계원'],
+  교직원: ['명진당', '자연', '5공', '채플관', '창조관', '디자인조형센터', '제4공학관', '차세대학과관'],
+  학생회관: ['학생', '자연', '5공', '3공', '채플관', '차세대학과관', '제2공학관', '하이브리드구조실험센터', '체육문화관', '산업협력관'],
   };
 
   let crowdBonus = 0;
@@ -528,8 +424,16 @@ function getDynamicCrowd(restaurantKey) {
     const ttBonus = getTimetableCrowdBonus(restaurantKey, now, timeFloat, NEARBY);
     if (ttBonus != null) crowdBonus = ttBonus;
   } else if (CAMPUS_SCHEDULE && CAMPUS_SCHEDULE[dow]) {
-    const arriving = countScheduleArrivalsAtRestaurant(restaurantKey, now);
-    crowdBonus = arriving * 0.02;
+    Object.entries(CAMPUS_SCHEDULE[dow]).forEach(([timeKey, buildings]) => {
+      const [h, m] = timeKey.split(':').map(Number);
+      const endFloat = h + m / 60;
+      const diff = timeFloat - endFloat;
+      if (diff >= -0.17 && diff <= 0.33) {
+        (NEARBY[restaurantKey] || []).forEach((b) => {
+          crowdBonus += (buildings[b] || 0) * 0.02;
+        });
+      }
+    });
   }
 
   // 사용자 피드백이 쌓일수록 아래 비중(0.5)을 높여야 함
@@ -606,7 +510,7 @@ async function loadMenus(refresh = false) {
       MENU_RESTAURANT_KEYS.map((k) => ({
         key: k,
         dayKeys: Object.keys(MENUS[k] || {}),
-        todayLunch: getMenuDayData(MENUS[k], menuRefDate(0))?.l?.length ?? 0,
+        todayLunch: getMenuDayData(MENUS[k], menuDayIndex(0))?.l?.length ?? 0,
       })),
     );
     if (lastData) drawFood();
@@ -697,22 +601,14 @@ let dayMode = 'today',
   lastData = null;
 
 function setRank(m) {
-  if (!['balance', 'distance', 'food'].includes(m)) return;
   rankMode = m;
   if (lastData) lastData.rankMode = m;
   document.getElementById('rBal')?.classList.toggle('on', m === 'balance');
   document.getElementById('rDist')?.classList.toggle('on', m === 'distance');
   document.getElementById('rFood')?.classList.toggle('on', m === 'food');
   updateFoodRankLabel();
-  if (!lastData) {
-    showToast('시간표에서 먼저 분석해 주세요');
-    return;
-  }
-  if (m === 'food' && !effectiveTastes().length && !window._mbFoodTasteHint) {
-    window._mbFoodTasteHint = true;
-    showToast('상단에서 취향(한식·중식 등)을 고르면 음식 순위가 달라져요');
-  }
-  drawFood();
+  if (lastData) drawFood();
+  else showToast('시간표에서 먼저 분석해 주세요');
 }
 
 function setDay(m) {
@@ -805,7 +701,7 @@ function updateSavedTimetableUi() {
       const gapLine = TimetableUtil.formatGapDetail
         ? TimetableUtil.formatGapDetail(snap, ref)
         : `공강 ${snap.gapMin}분`;
-      summary.innerHTML = `<b>${TimetableUtil.DOW_NAMES[dow]}요일</b> ${today.length}개 · ${gapLine}<br>현재: ${curDisplay}<br>다음: ${snap.nextTxt}`;
+      summary.innerHTML = `<b>${escapeHtml(TimetableUtil.DOW_NAMES[dow])}요일</b> ${today.length}개 · ${escapeHtml(gapLine)}<br>현재: ${escapeHtml(curDisplay)}<br>다음: ${escapeHtml(snap.nextTxt)}`;
     } else if (!classes.length) {
       summary.textContent = '저장된 시간표가 없습니다.';
     } else {
@@ -1182,12 +1078,6 @@ const RANK_MODE_LABELS = {
   food: '교내 4대 식당 — 취향 매칭 순위',
 };
 
-const RANK_MODE_SHORT = {
-  balance: '균형',
-  distance: '거리',
-  food: '음식',
-};
-
 function updateFoodRankLabel() {
   const el = document.getElementById('foodRankLbl');
   if (el) el.textContent = RANK_MODE_LABELS[rankMode] || RANK_MODE_LABELS.balance;
@@ -1305,104 +1195,6 @@ function cuisineMatchScore(menus, tastes) {
   return analyzeCuisineFit(menus, tastes).score;
 }
 
-function menuMatchHits(menus, tastes) {
-  return analyzeCuisineFit(menus, tastes).hits;
-}
-
-const CAMPUS_WALK_KEYS = new Set([
-  '1공',
-  '2공',
-  '3공',
-  '5공',
-  '명진당',
-  '공2',
-  '자연',
-  '학생',
-  '창조',
-  '채플',
-]);
-
-/** 시간표·분석 결과의 건물 키 → 도보 거리표 키 */
-function resolveCampusFromKey(raw) {
-  const s = String(raw || '').trim();
-  if (!s || s === 'none') return '3공';
-  if (typeof TimetableUtil !== 'undefined' && TimetableUtil.resolveBuildingKey) {
-    const k = TimetableUtil.resolveBuildingKey(s);
-    if (k && CAMPUS_WALK_KEYS.has(k)) return k;
-  }
-  if (CAMPUS_WALK_KEYS.has(s)) return s;
-  return '3공';
-}
-
-function compareSortTuple(a, b) {
-  const len = Math.max(a.length, b.length);
-  for (let i = 0; i < len; i++) {
-    const av = a[i];
-    const bv = b[i];
-    if (typeof av === 'string' && typeof bv === 'string') {
-      const c = av.localeCompare(bv, 'ko');
-      if (c !== 0) return c;
-      continue;
-    }
-    const na = Number(av) || 0;
-    const nb = Number(bv) || 0;
-    if (na < nb) return -1;
-    if (na > nb) return 1;
-  }
-  return 0;
-}
-
-/**
- * 모드별 정렬 키 (운영 종료는 맨 아래, 그 안에서도 모드별 순서 유지)
- * - distance: 편도 도보 → 왕복 → 대기
- * - food: 취향 메뉴 수 → 취향 점수 → 음식 가중 점수
- * - balance: 균형 가중 점수 → 공강 여유
- */
-function restaurantSortTuple(row, mode, period) {
-  const closed = row.cardState === 'closed' ? 1 : 0;
-  const tier = closed ? 9 : row.tier ?? 0;
-  const walk = Number(row.walk) || 999;
-  const total = Number(row.total) || 999;
-  const wait = Number(row.wait) || 999;
-  const margin = typeof row.margin === 'number' ? row.margin : -999;
-  const key = row.key || '';
-  const m = mode || 'balance';
-  const mealPeriod = period || mealMode || 'lunch';
-
-  if (mealPeriod === 'dinner') {
-    if (m === 'food') {
-      return [closed, tier, -(row.cuisineHits ?? 0), -(row.tasteScore ?? 0), -(row.foodScore ?? 0), walk, key];
-    }
-    if (m === 'distance') {
-      return [closed, tier, walk, total, wait, key];
-    }
-    return [closed, tier, -(row.balanceScore ?? 0), -margin, walk, key];
-  }
-
-  if (m === 'distance') {
-    return [closed, tier, walk, total, wait, -margin, key];
-  }
-  if (m === 'food') {
-    return [
-      closed,
-      tier,
-      -(row.cuisineFocus ?? 0),
-      -(row.cuisineHits ?? 0),
-      -(row.tasteScore ?? 0),
-      -(row.foodScore ?? 0),
-      walk,
-      key,
-    ];
-  }
-  return [closed, tier, -(row.balanceScore ?? 0), -margin, total, walk, key];
-}
-
-function sortRestaurantRows(rows, mode, period) {
-  return [...rows].sort((a, b) =>
-    compareSortTuple(restaurantSortTuple(a, mode, period), restaurantSortTuple(b, mode, period)),
-  );
-}
-
 const DELIVERY_LINKS = [
   { name: '배달의민족', url: 'https://www.baemin.com', icon: '🛵' },
   { name: '쿠팡이츠', url: 'https://www.coupangeats.com', icon: '🟡' },
@@ -1432,12 +1224,8 @@ function scoreRestaurantLocal(opts) {
   const { gapMin, waitMin, matchCount, mode, period, status } = opts;
   if (status === 'closed') return { score: 0, closed: true, tier: 2, infeasible: false };
 
-  const eatMin =
-    typeof CampusDistance !== 'undefined' && CampusDistance.EAT_MIN != null
-      ? CampusDistance.EAT_MIN
-      : 15;
   const gap = gapMin ?? 75;
-  const totalTime = 8 + (waitMin || 0) + eatMin;
+  const totalTime = 8 + (waitMin || 0) + 20;
   const margin = gap - totalTime;
   const infeasible = margin < 0;
   let timeScore;
@@ -1498,6 +1286,62 @@ function getRestaurantScore(opts) {
   return scoreRestaurantLocal(opts);
 }
 
+/** 운영 종료만 맨 아래 (오픈 전·내일 예정·운영 중은 모드별 순위 대상) */
+function isRestaurantClosed(row) {
+  return row.cardState === 'closed';
+}
+
+function isRankableRestaurant(row) {
+  return (
+    row.cardState === 'operating' ||
+    row.cardState === 'before_open' ||
+    row.cardState === 'tomorrow' ||
+    row.cardState === 'dinner_soon'
+  );
+}
+
+function toRankCompareRow(row) {
+  return {
+    key: row.key,
+    restaurantKey: row.key,
+    cardState: row.cardState,
+    closed: row.cardState === 'closed',
+    status: row.st,
+    infeasible: row.infeasible,
+    margin: row.margin,
+    walk: row.walk,
+    wait: row.wait,
+    total: row.total,
+    tasteScore: row.tasteScore,
+    score: row.score,
+    tier: row.tier,
+  };
+}
+
+function compareRestaurantRows(a, b, mode, period) {
+  const cA = isRestaurantClosed(a);
+  const cB = isRestaurantClosed(b);
+  if (cA !== cB) return cA ? 1 : -1;
+  if (cA && cB) return (a.key || '').localeCompare(b.key || '', 'ko');
+
+  const mealPeriod = period || mealMode || 'lunch';
+  if (typeof CampusDistance !== 'undefined' && typeof CampusDistance.compareRestaurants === 'function') {
+    return CampusDistance.compareRestaurants(a, b, mode, mealPeriod);
+  }
+  if (mealPeriod === 'dinner') {
+    if (mode === 'food' && (b.tasteScore || 0) !== (a.tasteScore || 0)) {
+      return (b.tasteScore || 0) - (a.tasteScore || 0);
+    }
+    return (a.walk || 0) - (b.walk || 0) || (a.total || 0) - (b.total || 0);
+  }
+  if (mode === 'distance') {
+    return (a.walk || 0) - (b.walk || 0) || (a.total || 0) - (b.total || 0) || (a.wait || 0) - (b.wait || 0);
+  }
+  if (mode === 'food') {
+    return (b.tasteScore || 0) - (a.tasteScore || 0) || b.score - a.score;
+  }
+  return b.score - a.score || (b.margin ?? 0) - (a.margin ?? 0);
+}
 
 function crowdBadgeLabel(st, baseBadge) {
   if (st === 'closed') return '운영 종료';
@@ -1626,13 +1470,17 @@ function isNoSchoolDay(d) {
   return dow === 0 || dow === 6;
 }
 
+function menuDayIndex(dayOffset = 0) {
+  const now = typeof KST !== 'undefined' ? KST.now() : new Date();
+  return (now.getDay() + dayOffset) % 7;
+}
+
 function getMenus(key, period, dayOffset = null) {
   const offset = dayOffset !== null ? dayOffset : dayMode === 'tomorrow' ? 1 : 0;
-  const ref = menuRefDate(offset);
   const slot = period === 'dinner' ? 'd' : 'l';
   const restaurantDays = MENUS[key];
   if (!restaurantDays) return [];
-  const dayData = getMenuDayData(restaurantDays, ref) || {};
+  const dayData = getMenuDayData(restaurantDays, offset) || {};
   let raw = dayData[slot] || [];
   if (!raw.length && period === 'dinner' && (key === '명진당' || key === '학생회관')) {
     raw = dayData.l?.length ? dayData.l : dayData.b || [];
@@ -1822,11 +1670,12 @@ function buildTomorrow(cur, period) {
   const mult2 = (PMULT[period] || 1) * 1.1;
   const walkFn =
     typeof CampusDistance !== 'undefined' ? (k) => CampusDistance.walkToRest(cur, k) : () => 8;
-  const tomorrowRef = menuRefDate(1);
-  const tomorrowDay = tomorrowRef.getDay();
+  const tomorrowDay = menuDayIndex(1);
   const 식당 = {};
   ['기숙사', '명진당', '교직원', '학생회관'].forEach((key) => {
     const walkMin = walkFn(key);
+    const tomorrowRef = typeof KST !== 'undefined' ? KST.now() : new Date();
+    tomorrowRef.setDate(tomorrowRef.getDate() + 1);
     if (tomorrowDay === 0 || tomorrowDay === 6 || isNoSchoolDay(tomorrowRef)) {
       식당[key] = {
         상태: 'closed',
@@ -1880,30 +1729,26 @@ function drawBoard() {
   const d = lastData;
   const meta = d.scheduleMeta || {};
   const gapLabel = meta.inClass ? '수업 · 이후' : '공강 시간';
-  const gapText = meta.gapDetail || d.공강텍스트 || '-';
-  const sbRow = (k, v, wrap = false) => {
-    const rowCls = wrap ? 'dr dr--gap' : 'dr';
-    const valCls = wrap ? 'dv dv--wrap' : 'dv';
-    return `<div class="${rowCls}"><span class="dk">${k}</span><span class="${valCls}">${v}</span></div>`;
-  };
   document.getElementById('sbRows').innerHTML = [
-    sbRow('분석 요일', meta.dowLabel ? `${meta.dowLabel}요일` : '-'),
-    sbRow('현재 위치', d.현재위치 || '-'),
-    sbRow('다음 수업', d.다음수업 || '-'),
-    sbRow(gapLabel, gapText, true),
-    sbRow('분석 시각', d.analyzedAt || 'KST'),
-  ].join('');
+    ['분석 요일', meta.dowLabel ? `${meta.dowLabel}요일` : '-'],
+    ['현재 위치', d.현재위치 || '-'],
+    ['다음 수업', d.다음수업 || '-'],
+    [gapLabel, meta.gapDetail || d.공강텍스트 || '-', true],
+    ['분석 시각', d.analyzedAt || 'KST'],
+  ]
+    .map(([k, v, isGap]) => `<div class="dr${isGap ? ' dr--gap' : ''}"><span class="dk">${escapeHtml(k)}</span><span class="dv${isGap ? ' dv--wrap' : ''}">${escapeHtml(v)}</span></div>`)
+    .join('');
 
   const tlEl = document.getElementById('ttTimeline');
   if (tlEl) {
     const timeline = meta.timeline || [];
     if (timeline.length) {
-      const dowTitle = meta.dowLabel ? `${meta.dowLabel}요일 · ` : '';
+      const dowTitle = meta.dowLabel ? `${escapeHtml(meta.dowLabel)}요일 · ` : '';
       tlEl.innerHTML = `<div class="tt-tl-title">🗓 ${dowTitle}오늘 수업 (${timeline.length}개)</div>${timeline
         .map((c) => {
           const st = c.state === 'now' ? 'now' : c.state === 'done' ? 'done' : '';
           const badge = c.state === 'now' ? ' · 지금' : c.state === 'done' ? ' · 종료' : '';
-          return `<div class="tt-tl-row ${st}"><span class="tt-tl-dot"></span><span class="tt-tl-time">${c.start}~${c.end}</span><span>${c.name}${badge}<br><span style="font-size:10px;color:var(--sub)">${c.label || c.buildingKey} ${c.room || ''}</span></span></div>`;
+          return `<div class="tt-tl-row ${st}"><span class="tt-tl-dot"></span><span class="tt-tl-time">${escapeHtml(c.start)}~${escapeHtml(c.end)}</span><span>${escapeHtml(c.name)}${badge}<br><span style="font-size:10px;color:var(--sub)">${escapeHtml(c.label || c.buildingKey)} ${escapeHtml(c.room || '')}</span></span></div>`;
         })
         .join('')}`;
     } else {
@@ -1912,7 +1757,7 @@ function drawBoard() {
   }
 
   document.getElementById('tAlert').innerHTML = d.mealIntent?.willEat
-    ? `⚠️ ${d.오늘?.crowd?.설명 || '식사 파동'} · 동시 이동 <b>${d.캠퍼스인원}</b>`
+    ? `⚠️ ${escapeHtml(d.오늘?.crowd?.설명 || '식사 파동')} · 동시 이동 <b>${escapeHtml(d.캠퍼스인원)}</b>`
     : `ℹ️ 짧은 공강 — 학식 대신 간단히 해결하는 패턴`;
   document.getElementById('schBd').classList.add('on');
   document.getElementById('aiBox').classList.add('on');
@@ -1933,54 +1778,43 @@ function drawAltFood() {
   const items = ext.list
     .map((it) => {
       const href = urlFn(it.platform, it.q);
-      return `<a class="alt-link" href="${href}" target="_blank" rel="noopener noreferrer">${it.platform} · ${it.name}</a>`;
+      return `<a class="alt-link" href="${safeHttpUrl(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(it.platform)} · ${escapeHtml(it.name)}</a>`;
     })
     .join('');
   box.className = 'alt-food on';
-  box.innerHTML = `<div class="alt-ttl">🛒 학식 대신 추천</div><div class="alt-why">${ext.why}</div><div class="alt-links">${items}</div>`;
+  box.innerHTML = `<div class="alt-ttl">🛒 학식 대신 추천</div><div class="alt-why">${escapeHtml(ext.why)}</div><div class="alt-links">${items}</div>`;
 }
 
-function rcStatusBadgeHtml(cardState, isPick, st, crowdLbl, rankIdx, rankModeKey) {
+function rcStatusBadgeHtml(cardState, isPick, st, crowdLbl, rankIdx) {
   if (cardState === 'closed') return `<span class="rc-badge rc-badge--closed">운영 종료</span>`;
-  const rankN = rankIdx >= 0 ? rankIdx + 1 : 0;
-  const modeLbl = RANK_MODE_SHORT[rankModeKey] || '';
-  const rankHead = rankN ? `${rankN}순위` : '';
-  if (cardState === 'before_open') {
-    return `<span class="rc-badge rc-badge--blue">${rankHead}${modeLbl ? ` · ${modeLbl}` : ''} · 오픈 전</span>`;
-  }
-  if (cardState === 'dinner_soon') {
-    return `<span class="rc-badge rc-badge--o">${rankHead} · 저녁 오픈 예정</span>`;
-  }
-  if (cardState === 'tomorrow') {
-    return `<span class="rc-badge rc-badge--g">${rankHead}${modeLbl ? ` · ${modeLbl}` : ''} · 운영 예정</span>`;
-  }
-  if (isPick) {
-    return `<span class="rc-badge rc-badge--g">${rankHead} 추천 · ${crowdLbl}</span>`;
-  }
+  if (cardState === 'before_open') return `<span class="rc-badge rc-badge--blue">오픈 전</span>`;
+  if (cardState === 'dinner_soon') return `<span class="rc-badge rc-badge--o">저녁 오픈 예정</span>`;
+  if (cardState === 'tomorrow') return `<span class="rc-badge rc-badge--g">운영 예정</span>`;
+  if (isPick) return `<span class="rc-badge rc-badge--g">1순위 · ${escapeHtml(crowdLbl)}</span>`;
   const cls = st === 'ok' ? 'rc-badge--g' : st === 'warn' ? 'rc-badge--o' : 'rc-badge--r';
-  return `<span class="rc-badge ${cls}">${rankHead} · ${crowdLbl}</span>`;
+  const rankPrefix = rankIdx === 1 ? '2순위 · ' : rankIdx === 2 ? '3순위 · ' : rankIdx === 3 ? '4순위 · ' : '';
+  return `<span class="rc-badge ${cls}">${rankPrefix}${escapeHtml(crowdLbl)}</span>`;
 }
 
 function buildRestaurantCardHtml(row, ctx) {
   const { e, n, st, menus, walk, back, wait, total, margin, cardState } = row;
-  const { gapMin, mealMin, isPick, instaUrl, rankIdx, hoursText, rankModeKey } = ctx;
+  const { gapMin, mealMin, isPick, instaUrl, rankIdx, hoursText } = ctx;
   const crowdLbl = crowdBadgeLabel(st);
-  const badge = rcStatusBadgeHtml(cardState, isPick, st, crowdLbl, rankIdx, rankModeKey);
+  const badge = rcStatusBadgeHtml(cardState, isPick, st, crowdLbl, rankIdx);
   const nameCls = cardState === 'closed' ? ' rc-hd-name--muted' : '';
-  const modeShort = RANK_MODE_SHORT[rankModeKey] || '';
   const rankTag =
-    cardState !== 'closed' && rankIdx >= 0
-      ? `<span class="rc-rank-tag">${rankIdx + 1}순위${modeShort ? ` · ${modeShort}` : ''}</span>`
+    (cardState === 'before_open' || cardState === 'tomorrow') && rankIdx >= 0
+      ? `<span class="rc-rank-tag">${rankIdx + 1}순위</span>`
       : '';
-  const header = `<div class="rc-hd"><div class="rc-hd-name${nameCls}">${e} ${n}${rankTag}</div>${badge}</div>`;
+  const header = `<div class="rc-hd"><div class="rc-hd-name${nameCls}">${escapeHtml(e)} ${escapeHtml(n)}${rankTag}</div>${badge}</div>`;
 
   const insta =
     instaUrl
-      ? `<a class="rc-insta" href="${instaUrl}" target="_blank" rel="noopener noreferrer">📸 인스타 보기</a>`
+      ? `<a class="rc-insta" href="${safeHttpUrl(instaUrl)}" target="_blank" rel="noopener noreferrer">📸 인스타 보기</a>`
       : '';
 
   if (cardState === 'closed') {
-    return `${header}<div class="rc-body rc-body--closed"><div class="rc-hours">${hoursText}</div>${insta}</div>`;
+    return `${header}<div class="rc-body rc-body--closed"><div class="rc-hours">${escapeHtml(hoursText)}</div>${insta}</div>`;
   }
 
   const roundTrip = walk + back;
@@ -2016,13 +1850,13 @@ function buildRestaurantCardHtml(row, ctx) {
       .slice(0, 4)
       .map((m) => {
         const taste = m.tag === 'match' ? '<span class="rc-menu-match">취향</span>' : '';
-        return `<div class="rc-menu-item"><span>${m.name}</span>${taste}</div>`;
+        return `<div class="rc-menu-item"><span>${escapeHtml(m.name)}</span>${taste}</div>`;
       })
       .join('');
     menuBlock = `<div class="rc-menus">${items}</div>`;
   }
 
-  return `${header}<div class="rc-body"><div class="rc-hours">${hoursText}</div>${timeGrid}${marginRow}${menuBlock}${insta}</div>`;
+  return `${header}<div class="rc-body"><div class="rc-hours">${escapeHtml(hoursText)}</div>${timeGrid}${marginRow}${menuBlock}${insta}</div>`;
 }
 
 function drawFood() {
@@ -2032,7 +1866,7 @@ function drawFood() {
 
   drawAltFood();
   document.getElementById('dayChip').innerHTML =
-    dayMode === 'tomorrow' && lastData.내일?.예측 ? `<div class="pred-chip">🔮 내일 예측 — ${lastData.내일.예측}</div>` : '';
+    dayMode === 'tomorrow' && lastData.내일?.예측 ? `<div class="pred-chip">🔮 내일 예측 — ${escapeHtml(lastData.내일.예측)}</div>` : '';
 
   const deliveryWrap = document.getElementById('deliveryWrap');
   if (!menuMeta.ready) {
@@ -2064,8 +1898,7 @@ function drawFood() {
   const menuOffDay = isNoSchoolDay(menuRef);
 
   const nowRef = typeof KST !== 'undefined' ? KST.now() : new Date();
-  const fromKey = resolveCampusFromKey(lastData.현재건물키);
-  const tastesNow = effectiveTastes();
+  const fromKey = lastData.현재건물키 || '3공';
 
   const scored = DEFS.map((def) => {
     const base = src.식당[def.key] || {};
@@ -2074,14 +1907,8 @@ function drawFood() {
     const isClosed = cardState === 'closed';
     const showMenus = !isClosed && !menuOffDay;
     const menus = showMenus ? getMenus(def.key, mealMode, menuDayOff) : [];
-    const walk =
-      typeof CampusDistance !== 'undefined'
-        ? CampusDistance.walkToRest(fromKey, def.key)
-        : Number(base.도보분) || 8;
-    const back =
-      typeof CampusDistance !== 'undefined'
-        ? CampusDistance.walkRestToBuilding(def.key, nextKey)
-        : Number(base.복귀분) || 0;
+    const walk = base.도보분 ?? CampusDistance.walkToRest(fromKey, def.key);
+    const back = base.복귀분 ?? CampusDistance.walkRestToBuilding(def.key, nextKey);
     const congBase = base.혼잡도 || getDynamicCrowd(def.key);
     const liveCong = cardState === 'operating' ? getDynamicCrowd(def.key) : congBase;
     const liveWait = cardState === 'dinner_soon' ? 0 : waitMin(liveCong);
@@ -2093,36 +1920,22 @@ function drawFood() {
     const total = walk + effectiveWait + MEAL + back;
     const margin = gapMin - total;
     const st = isClosed ? 'closed' : liveCong >= 80 ? 'bad' : liveCong >= 55 ? 'warn' : 'ok';
-    const cuisineFit = analyzeCuisineFit(menus, tastesNow);
-    const tasteScore = cuisineFit.score;
-    const cuisineHits = cuisineFit.hits;
-    const cuisineFocus = tastesNow.length
-      ? tastesNow.reduce((sum, t) => sum + (cuisineFit.breakdown[t] || 0), 0)
-      : 0;
-    const matchHits = menuMatchHits(menus, tastesNow);
-    const scoreBase = {
-      fromKey,
-      nextKey,
-      gapMin,
-      restaurantKey: def.key,
-      waitMin: liveWait,
-      matchCount: tasteScore,
-      period: mealMode,
-      status: st,
-    };
-    const balanceResult = isClosed
-      ? { score: 0, tier: 2, infeasible: false, margin }
-      : getRestaurantScore({ ...scoreBase, mode: 'balance' });
-    const foodResult = isClosed
-      ? { score: 0, tier: 2, infeasible: false, margin }
-      : getRestaurantScore({ ...scoreBase, mode: 'food' });
+    const tasteScore = cuisineMatchScore(menus, effectiveTastes());
     const scoreResult = isClosed
       ? { score: 0, closed: true, tier: 2, infeasible: false, margin }
-      : getRestaurantScore({ ...scoreBase, mode: activeRankMode });
-    const balanceScore = isClosed ? 0 : balanceResult.score ?? 0;
-    const foodScore = isClosed ? 0 : foodResult.score ?? 0;
+      : getRestaurantScore({
+          fromKey,
+          nextKey,
+          gapMin,
+          restaurantKey: def.key,
+          waitMin: liveWait,
+          matchCount: tasteScore,
+          mode: activeRankMode,
+          period: mealMode,
+          status: st,
+        });
     const score = isClosed ? 0 : scoreResult.score ?? 0;
-    const rowMargin = gapMin - total;
+    const rowMargin = scoreResult.margin ?? margin;
     const hoursText = buildCardHoursText(def.key, mealMode, cardState, {
       ref: nowRef,
       dow: cardInfo.dow ?? menuRef.getDay(),
@@ -2140,34 +1953,40 @@ function drawFood() {
       total,
       margin: rowMargin,
       score,
-      balanceScore,
-      foodScore,
       tasteScore,
-      cuisineHits,
-      cuisineFocus,
-      matchHits,
       cardState,
       hoursText,
       openNow: cardState === 'operating',
       closed: isClosed || !!scoreResult.closed,
       infeasible: !!scoreResult.infeasible,
-      tier: isClosed ? 2 : balanceResult.tier ?? 0,
+      tier: isClosed ? 2 : scoreResult.tier ?? 0,
     };
   });
 
-  const ordered = sortRestaurantRows(scored, rankMode, mealMode);
+  const rankableRows = [];
+  const closedRows = [];
+  for (const row of scored) {
+    (isRankableRestaurant(row) ? rankableRows : closedRows).push(row);
+  }
+  rankableRows.sort((a, b) =>
+    compareRestaurantRows(toRankCompareRow(a), toRankCompareRow(b), activeRankMode, mealMode),
+  );
+  closedRows.sort((a, b) => (a.key || '').localeCompare(b.key || '', 'ko'));
+  const ordered = rankableRows.concat(closedRows);
 
   let pickName = '추천 식당';
   let pickKey = ordered[0]?.key;
   const wrap = document.getElementById('rcWrap');
-  wrap.innerHTML = '';
-  wrap.dataset.rankMode = rankMode;
-  wrap.dataset.rankOrder = ordered.map((r) => r.key).join(',');
+  const shortGapBanner =
+    dayMode === 'today' && gapMin < 45
+      ? '<div class="gap-short-banner">⚠️ 공강이 짧아요! 빠른 식당을 우선 추천해요</div>'
+      : '';
+  wrap.innerHTML = shortGapBanner;
 
   ordered.forEach((row, idx) => {
     const { key, e, n, st, menus, walk, back, wait, total, margin, cardState, hoursText, tier, infeasible } = row;
     const isClosed = cardState === 'closed';
-    const isPick = idx === 0 && !isClosed && tier === 0 && !infeasible;
+    const isPick = idx === 0 && cardState === 'operating' && tier === 0 && !infeasible && st !== 'bad';
     if (isPick) {
       pickName = n;
       pickKey = key;
@@ -2184,7 +2003,6 @@ function drawFood() {
         instaUrl: INSTA[key],
         rankIdx: idx,
         hoursText,
-        rankModeKey: rankMode,
       },
     );
     wrap.appendChild(card);
@@ -2836,23 +2654,14 @@ function renderShuttleModalBody() {
       .sort((a, b) => a.depM - b.depM)
       .map((r) => ({ ...r, isPast: false, isMoving: false, next: false }));
   } else {
-    const completed = rows.filter((r) => r.arrM <= nowM);
-    const lastPast = completed.length ? completed[completed.length - 1] : null;
-    const future = rows.filter((r) => r.depM > nowM && r.depM <= nowM + 120);
-    const inFlight = rows.find((r) => nowM >= r.depM && nowM < r.arrM);
-    const firstUp = future[0];
-    display = [];
-    if (lastPast) display.push({ ...lastPast, isPast: true });
-    if (inFlight) display.push({ ...inFlight, isPast: false, isMoving: true });
-    display = [
-      ...display,
-      ...future.map((r) => ({
-        ...r,
-        isPast: false,
-        isMoving: false,
-        next: !inFlight && firstUp && r.depM === firstUp.depM,
-      })),
-    ];
+    const sorted = [...rows].sort((a, b) => a.depM - b.depM);
+    const firstUp = sorted.find((r) => r.depM > nowM && !(nowM >= r.depM && nowM < r.arrM));
+    display = sorted.map((r) => ({
+      ...r,
+      isPast: r.arrM <= nowM,
+      isMoving: nowM >= r.depM && nowM < r.arrM,
+      next: firstUp ? r.depM === firstUp.depM : false,
+    }));
   }
 
   const schedRows = display.length
@@ -2948,12 +2757,12 @@ async function doAnalyzeImg() {
 function typeText(eid, text, sp = 18) {
   const el = document.getElementById(eid);
   const raw = String(text);
-  const htmlFull = raw.replace(/\n/g, '<br>');
+  const htmlFull = htmlWithBreaks(raw);
   let i = 0;
   el.innerHTML = '';
   const t = setInterval(() => {
     if (i < raw.length) {
-      const partial = raw.slice(0, ++i).replace(/\n/g, '<br>');
+      const partial = htmlWithBreaks(raw.slice(0, ++i));
       el.innerHTML = partial + '<span class="cur"></span>';
     } else {
       el.innerHTML = htmlFull;

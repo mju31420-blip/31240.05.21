@@ -15,12 +15,12 @@ const clientCache = new Map();
 
 const ROOM_PREFIX_MAP = [
   ['Y19', '3공'],
-  ['Y22', '학생'],
+  ['Y22', '채플'],
   ['Y21', '학생'],
-  ['Y25', '자연'],
+  ['Y25', '창조'],
   ['Y7', '자연'],
   ['Y11', '공2'],
-  ['Y9', '공2'],
+  ['Y9', '자연'],
   ['Y5', '5공'],
   ['Y3', '명진당'],
   ['Y1', '1공'],
@@ -315,7 +315,7 @@ ${formatPeriodTableForPrompt(loadClassPeriods())}
 7) 2·3교시 **한 블록·한 과목**일 때만 연속 end (10:00~11:50, 13:00~14:50).`;
 }
 
-const ROOM_GUIDE = `호실→buildingKey: Y1→1공, Y19→3공, Y5→5공, Y3→명진당, Y9/Y11→공2, Y7/Y25→자연, Y21/Y22→학생, 채플→채플, 창조→창조.
+const ROOM_GUIDE = `호실→buildingKey: Y1→1공, Y19→3공, Y5→5공, Y3→명진당, Y11→공2, Y7/Y9→자연, Y21→학생, Y22/채플→채플, Y25/창조→창조.
 buildingKey 허용: ${BUILDING_KEYS_LIST}.
 에브리타임 열 dow: 월=1, 화=2, 수=3, 목=4, 금=5, 토=6, 일=0.`;
 

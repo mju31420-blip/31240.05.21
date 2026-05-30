@@ -93,6 +93,20 @@ function parseTableRows($) {
     }
     days[currentDateKey][slot] = items;
   });
+  return withDowKeys(days);
+}
+
+/** MM-DD 날짜 키 데이터를 요일(0~6) 키로도 미러링 (가장 최근 날짜 우선) */
+function withDowKeys(days) {
+  const dated = Object.keys(days)
+    .filter((k) => /^\d{2}-\d{2}$/.test(k))
+    .sort();
+  for (const dateKey of dated) {
+    const entry = days[dateKey];
+    const dow = entry?.dow;
+    if (typeof dow !== 'number' || dow < 0 || dow > 6) continue;
+    days[dow] = entry;
+  }
   return days;
 }
 

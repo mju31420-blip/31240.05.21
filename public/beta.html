@@ -660,7 +660,18 @@ html.ob-lock,html.ob-lock body{overflow:hidden}
 <div class="toast" id="toast"></div>
 
 <script>
-  window.__BETA_MOCK_TIME__ = '2026-05-27T13:00:00+09:00';
+  (function () {
+    const nowKst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+    const day = nowKst.getDay(); // 0=일 … 6=토
+    let offset;
+    if (day === 1) offset = 0;        // 월요일이면 오늘
+    else if (day === 0) offset = 1;   // 일요일(월요일 이전)이면 이번 주 월요일
+    else offset = 8 - day;            // 화~토(월요일 이후)면 다음 주 월요일
+    const monday = new Date(nowKst.getFullYear(), nowKst.getMonth(), nowKst.getDate() + offset);
+    const mo = String(monday.getMonth() + 1).padStart(2, '0');
+    const d = String(monday.getDate()).padStart(2, '0');
+    window.__BETA_MOCK_TIME__ = `${monday.getFullYear()}-${mo}-${d}T13:00:00+09:00`;
+  })();
   window.__MB_BETA__ = true;
 </script>
 <script type="module" src="/analytics-sync.js?v=20260523-dash1"></script>

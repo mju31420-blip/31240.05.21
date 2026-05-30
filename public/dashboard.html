@@ -474,6 +474,12 @@
   const pwErr = document.getElementById('pwErr');
 
   /* ── 시간·패턴 유틸 ── */
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (ch) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+    ));
+  }
+
   function parseTs(tsRaw) {
     if (tsRaw?.toDate) return tsRaw.toDate();
     if (tsRaw instanceof Date) return tsRaw;
@@ -843,10 +849,10 @@
           .map(
             (s) => `<tr>
           <td>${formatKst(s.timestamp)}</td>
-          <td><code>${uidShort(s.uid)}</code></td>
-          <td>${(s.buildings[0] || '?')} → ${(s.buildings[1] || 'none')}</td>
-          <td>${s.gapMin}분</td>
-          <td class="pat" title="${patternKey(s)}"><code>${patternShort(patternKey(s))}</code></td>
+          <td><code>${escapeHtml(uidShort(s.uid))}</code></td>
+          <td>${escapeHtml(s.buildings[0] || '?')} → ${escapeHtml(s.buildings[1] || 'none')}</td>
+          <td>${escapeHtml(s.gapMin)}분</td>
+          <td class="pat" title="${escapeHtml(patternKey(s))}"><code>${escapeHtml(patternShort(patternKey(s)))}</code></td>
           <td><span class="badge ${s.visited ? 'badge-yes' : 'badge-no'}">${s.visited ? '완료' : '-'}</span></td>
         </tr>`,
           )
@@ -864,7 +870,7 @@
             const conv = p.count ? Math.round((Math.min(p.visited, p.count) / p.count) * 100) : 0;
             const converted = p.visited > 0 ? 'Y' : '-';
             return `<tr>
-          <td title="${p.key}">${p.label}</td>
+          <td title="${escapeHtml(p.key)}">${escapeHtml(p.label)}</td>
           <td><b>${p.count}</b></td>
           <td>${p.uids.size}</td>
           <td>${converted} (${p.visited})</td>
@@ -946,11 +952,11 @@
 
     document.getElementById('recentTbl').innerHTML = visits.slice(0, 20).map(
       (r) => `<tr>
-        <td><code>${uidShort(r.uid)}</code></td>
+        <td><code>${escapeHtml(uidShort(r.uid))}</code></td>
         <td>${formatKst(r.timestamp)}</td>
-        <td>${r.restaurant}</td>
+        <td>${escapeHtml(r.restaurant)}</td>
         <td>${crowdLabel(r.actualCrowd)}</td>
-        <td>${satLabel[r.satisfaction] || r.satisfaction}</td>
+        <td>${escapeHtml(satLabel[r.satisfaction] || r.satisfaction)}</td>
       </tr>`,
     ).join('');
   }
@@ -1031,7 +1037,7 @@
       warn.style.display = 'block';
       warn.innerHTML =
         '데이터가 없습니다. 메인 앱에서 <b>시간표 분석</b> 후 <b>방문 완료</b>를 남기면 Firestore에 쌓입니다.';
-      if (data.visitErr || data.sessionErr) warn.innerHTML += `<br><br><small>Firestore: ${data.sessionErr || data.visitErr}</small>`;
+      if (data.visitErr || data.sessionErr) warn.innerHTML += `<br><br><small>Firestore: ${escapeHtml(data.sessionErr || data.visitErr)}</small>`;
     } else if ((data.sessionErr || data.visitErr) && !data.remoteSessions.length) {
       warn.style.display = 'block';
       warn.textContent = `Firestore 세션을 불러오지 못했습니다 (${data.sessionErr || data.visitErr}). 방문 로컬만 있을 수 있습니다.`;

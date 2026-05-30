@@ -1,18 +1,67 @@
-rules_version='2'
+rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isShortString(value, max) {
+      return value is string && value.size() <= max;
+    }
+
+    function isOptionalShortField(field, max) {
+      return !(field in request.resource.data) || isShortString(request.resource.data[field], max);
+    }
+
+    function validSession() {
+      return request.resource.data.keys().hasOnly([
+          'uid', 'buildings', 'gapMin', 'timestamp', 'visited', 'patternKey'
+        ])
+        && isShortString(request.resource.data.uid, 80)
+        && request.resource.data.buildings is list
+        && request.resource.data.buildings.size() <= 2
+        && request.resource.data.gapMin is number
+        && request.resource.data.gapMin >= 0
+        && request.resource.data.gapMin <= 600
+        && request.resource.data.timestamp is timestamp
+        && request.resource.data.visited is bool
+        && isOptionalShortField('patternKey', 160);
+    }
+
+    function validVisit() {
+      return request.resource.data.keys().hasOnly([
+          'uid', 'restaurant', 'satisfaction', 'actualCrowd', 'dow', 'hour', 'timestamp'
+        ])
+        && isOptionalShortField('uid', 80)
+        && isShortString(request.resource.data.restaurant, 30)
+        && request.resource.data.satisfaction in ['good', 'neutral', 'bad']
+        && request.resource.data.actualCrowd is number
+        && request.resource.data.actualCrowd >= 0
+        && request.resource.data.actualCrowd <= 100
+        && request.resource.data.dow is number
+        && request.resource.data.dow >= 0
+        && request.resource.data.dow <= 6
+        && request.resource.data.hour is number
+        && request.resource.data.hour >= 0
+        && request.resource.data.hour <= 23
+        && request.resource.data.timestamp is timestamp;
+    }
+
+    match /sessions/{id} {
+      allow read: if true;
+      allow create, update: if validSession();
+      allow delete: if false;
+    }
+
+    match /visits/{id} {
+      allow read: if true;
+      allow create: if validVisit();
+      allow update, delete: if false;
+    }
+
+    match /suggestions/{id} {
+      allow read, write: if false;
+    }
+
     match /{document=**} {
-      // This rule allows anyone with your database reference to view, edit,
-      // and delete all data in your database. It is useful for getting
-      // started, but it is configured to expire after 30 days because it
-      // leaves your app open to attackers. At that time, all client
-      // requests to your database will be denied.
-      //
-      // Make sure to write security rules for your app before that time, or
-      // else all client requests to your database will be denied until you
-      // update your rules.
-      allow read, write: if request.time < timestamp.date(2026, 6, 19);
+      allow read, write: if false;
     }
   }
 }

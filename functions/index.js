@@ -10,11 +10,47 @@ import {
   estimateBase64DecodedBytes,
   MAX_TIMETABLE_IMAGE_BYTES,
 } from './services/scheduleAnalyzer.js';
-import { sendSuggestionEmail, getMailConfigStatus } from './services/suggestMail.js';
+import { sendSuggestionEmail } from './services/suggestMail.js';
+
+const JSON_LIMIT = '8mb';
+const ALLOWED_ORIGIN_RE = /^https:\/\/(myeong-biseo-v2\.web\.app|myeong-biseo-v2\.firebaseapp\.com)$/;
+const LOCAL_ORIGIN_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+const SUGGEST_TYPES = new Set(['기능 요청', '버그 신고', '식당 오류', '셔틀 오류', '기타']);
+const RATE_LIMITS = new Map();
 
 function getDb() {
   if (!getApps().length) initializeApp();
   return getFirestore();
+}
+
+function trimField(value, max) {
+  return String(value ?? '').trim().slice(0, max);
+}
+
+function isValidEmail(value) {
+  if (!value) return true;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254;
+}
+
+function rateLimit({ windowMs, max }) {
+  return (req, res, next) => {
+    const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    const ip = forwarded || req.ip || req.socket?.remoteAddress || 'unknown';
+    const key = `${ip}:${req.path}`;
+    const now = Date.now();
+    const bucket = RATE_LIMITS.get(key);
+    if (!bucket || now > bucket.resetAt) {
+      RATE_LIMITS.set(key, { count: 1, resetAt: now + windowMs });
+      next();
+      return;
+    }
+    bucket.count += 1;
+    if (bucket.count > max) {
+      res.status(429).json({ ok: false, error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' });
+      return;
+    }
+    next();
+  };
 }
 
 const anthropicApiKey = defineSecret('ANTHROPIC_API_KEY');
@@ -24,22 +60,26 @@ const smtpPass = defineSecret('SMTP_PASS');
 const suggestToEmail = defineSecret('SUGGEST_TO_EMAIL');
 
 const app = express();
-app.use(cors({ origin: true }));
-app.use(express.json({ limit: '12mb' }));
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin || ALLOWED_ORIGIN_RE.test(origin) || LOCAL_ORIGIN_RE.test(origin)) {
+      cb(null, true);
+      return;
+    }
+    cb(null, false);
+  },
+}));
+app.use(express.json({ limit: JSON_LIMIT }));
 
 app.get(['/api/health', '/health'], (_req, res) => {
-  const mail = getMailConfigStatus();
   res.json({
     ok: true,
-    hasAnthropicKey: Boolean(process.env.ANTHROPIC_API_KEY),
-    mailReady: mail.hasTo && mail.hasSmtp,
-    mail,
     platform: 'firebase',
   });
 });
 
 /** 기숙사·명진당·교직원·학생회관 — 오늘 점심/저녘 (크롤 실패 시 샘플) */
-app.get(['/api/menus', '/menus'], async (req, res) => {
+app.get(['/api/menus', '/menus'], rateLimit({ windowMs: 60 * 1000, max: 60 }), async (req, res) => {
   try {
     const data = await getMenus({ force: req.query.refresh === '1' });
     res.json({
@@ -53,18 +93,25 @@ app.get(['/api/menus', '/menus'], async (req, res) => {
   }
 });
 
-app.post(['/api/suggest', '/suggest'], async (req, res) => {
-  const { type, body, name, home, replyEmail } = req.body || {};
-  if (!body?.trim()) {
+app.post(['/api/suggest', '/suggest'], rateLimit({ windowMs: 60 * 60 * 1000, max: 8 }), async (req, res) => {
+  const typeRaw = trimField(req.body?.type, 40);
+  const body = trimField(req.body?.body, 2000);
+  const name = trimField(req.body?.name, 40);
+  const home = trimField(req.body?.home, 40);
+  const replyEmail = trimField(req.body?.replyEmail, 254);
+  if (!body) {
     return res.status(400).json({ ok: false, error: '내용을 입력해주세요' });
+  }
+  if (!isValidEmail(replyEmail)) {
+    return res.status(400).json({ ok: false, error: '이메일 형식을 확인해주세요' });
   }
 
   const payload = {
-    type: type || '기타',
-    body: body.trim(),
+    type: SUGGEST_TYPES.has(typeRaw) ? typeRaw : '기타',
+    body,
     name: name || '익명',
-    home: home || '',
-    replyEmail: replyEmail || '',
+    home,
+    replyEmail,
     createdAt: FieldValue.serverTimestamp(),
     status: 'pending',
   };
@@ -118,11 +165,14 @@ app.post(['/api/suggest', '/suggest'], async (req, res) => {
 });
 
 /** 시간표 이미지 OCR — ANTHROPIC_API_KEY (Secret / env) */
-app.post(['/api/analyze/timetable', '/analyze/timetable'], async (req, res) => {
+app.post(['/api/analyze/timetable', '/analyze/timetable'], rateLimit({ windowMs: 60 * 60 * 1000, max: 20 }), async (req, res) => {
   try {
     const { imageBase64, mediaType } = req.body || {};
     if (!imageBase64) {
       return res.status(400).json({ ok: false, error: 'imageBase64가 필요합니다' });
+    }
+    if (!/^image\/(jpeg|jpg|png|webp)$/i.test(String(mediaType || 'image/jpeg'))) {
+      return res.status(400).json({ ok: false, error: '지원하지 않는 이미지 형식입니다.', code: 'IMAGE_TYPE_UNSUPPORTED' });
     }
     const b64 = String(imageBase64).replace(/^data:image\/\w+;base64,/, '').trim();
     if (estimateBase64DecodedBytes(b64) > MAX_TIMETABLE_IMAGE_BYTES) {
