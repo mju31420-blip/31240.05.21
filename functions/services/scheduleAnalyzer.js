@@ -353,6 +353,7 @@ export async function analyzeTimetableImage({ imageBase64, mediaType = 'image/jp
   const todayName = DOW_NAMES[dow];
   const timeContext = `현재 KST는 ${todayName}요일(dow=${dow}) ${ampm} ${hour12}시 ${kstMin}분입니다.`;
 
+  console.log('[OCR] start');
   const msg = await client.messages.create({
     model: 'claude-sonnet-4-5',
     max_tokens: 4096,
@@ -398,6 +399,7 @@ ${SCHEMA_HINT}`,
   } catch {
     throw new Error('AI 응답 JSON 파싱 실패');
   }
+  console.log('[OCR] parsed:', JSON.stringify(parsed));
 
   const sanitized = sanitizeAiTimetableResponse(parsed);
   const refined = refineFromSanitized(sanitized, now);
@@ -405,6 +407,7 @@ ${SCHEMA_HINT}`,
   const lectureDb = loadLectureDb();
   const curTxt = resolveCurrentLocationTxt(refined, lectureDb, BUILDING_LABELS, now.getDay());
 
+  console.log('[OCR] final:', JSON.stringify(refined.classes));
   return {
     curKey: refined.curKey,
     curTxt,
