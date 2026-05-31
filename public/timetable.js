@@ -60,7 +60,7 @@ const BUILDING_ALIASES = {
   '2공': ['2공', '제2공학관', '2공학관', '제2공'],
   '3공': ['3공', '제3공학관', '3공학관', 'Y19'],
   '5공': ['5공', '제5공학관', '5공학관', 'Y5'],
-  공2: ['공2', '공학2관', 'Y11'],
+  공2: ['공2', '공학2관'],
   명진당: ['명진당', '명진', 'Y3'],
   자연: ['자연', '자연과학관', '항박관', '함박관', 'Y7', 'Y9'],
   학생: ['학생', '학생복지관', 'Y21'],
@@ -71,19 +71,26 @@ const BUILDING_ALIASES = {
   디자인조형센터: ['디자인조형센터', '디자인', '조형센터'],
   체육문화관: ['체육문화관', '체육문화'],
   체육관: ['체육관'],
-  학군단: ['학군단'],
+  학군단: ['학군단', 'Y11'],
   건축도시설계원: ['건축도시설계원', '건축도시', '건축설계원'],
   하이브리드구조실험센터: ['하이브리드구조실험센터', '하이브리드', '구조실험센터'],
   산업협력관: ['산업협력관', '산업협력', '산협'],
 };
 
 const ROOM_PREFIX_MAP = [
+  ['Y81', '2공'],
+  ['Y71', '체육관'],
+  ['Y61', '체육문화관'],
+  ['Y25', '창조'],
+  ['Y23', '차세대과학관'],
   ['Y19', '3공'],
+  ['Y13', '제4공학관'],
+  ['Y12', '디자인조형센터'],
   ['Y22', '채플'],
   ['Y21', '학생'],
-  ['Y25', '창조'],
-  ['Y7', '자연'],
+  ['Y20', '건축도시설계원'],
   ['Y11', '공2'],
+  ['Y7', '자연'],
   ['Y9', '자연'],
   ['Y5', '5공'],
   ['Y3', '명진당'],
@@ -135,7 +142,7 @@ const DEFAULT_DAYTIME_PERIODS = [
   { period: 9, start: '17:00', end: '17:50' },
 ];
 
-const VALID_PERIOD_DURATIONS = [50, 110, 170];
+const VALID_PERIOD_DURATIONS = [50, 95, 110, 145, 170, 230, 290, 350, 410];
 
 let _classPeriodsCache = null;
 let _classPeriodsPromise = null;
@@ -248,16 +255,7 @@ function normalizeEverytimeClassTimes(start, end) {
   return fixCommonMisreadStart({ start: m2t(normalizedStart), end: endStr }, daytime);
 }
 
-/** 2교시(110분) 블록이 09:00에 시작하면 10:00 행 오독으로 보고 10:00~11:50으로 보정 */
-function fixCommonMisreadStart(times, daytime) {
-  const st = t2m(times.start);
-  const en = t2m(times.end);
-  if (st == null || en == null) return times;
-  const dur = en - st;
-  if (st === t2m('09:00') && findStartPeriodIndex(t2m('10:00'), daytime) >= 0) {
-    if (dur === 110) return { start: '10:00', end: '11:50' };
-    if (dur === 170 && times.end === '11:50') return { start: '10:00', end: '11:50' };
-  }
+function fixCommonMisreadStart(times) {
   return times;
 }
 
@@ -503,10 +501,7 @@ function analyzeFromClasses(classes, refDate = null) {
   refDate = refDate || (typeof KST !== 'undefined' ? KST.now() : new Date());
   classes = dedupeOverlappingClasses(classes || []);
   const dow = refDate.getDay();
-  const noSchool =
-    typeof SchoolCalendar !== 'undefined' && SchoolCalendar.isNoSchoolDay
-      ? SchoolCalendar.isNoSchoolDay(refDate)
-      : dow === 0 || dow === 6;
+  const noSchool = dow === 0 || dow === 6;
   const nowMin = refDate.getHours() * 60 + refDate.getMinutes();
   const today = noSchool ? [] : classes.filter((c) => c.dow === dow).sort((a, b) => t2m(a.start) - t2m(b.start));
 
@@ -545,7 +540,7 @@ function analyzeFromClasses(classes, refDate = null) {
   } else if (noSchool || !today.length) {
     gapMin = 240;
   } else if (lastEnded || inClass) {
-    gapMin = Math.max(90, 17 * 60 - gapFrom);
+    gapMin = Math.max(0, 17 * 60 - gapFrom);
   } else if (today.length) {
     gapMin = Math.max(0, t2m(today[0].start) - nowMin);
   } else {

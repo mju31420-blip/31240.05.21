@@ -16,7 +16,7 @@ const DEFAULT_DAYTIME = [
   { period: 9, start: '17:00', end: '17:50' },
 ];
 
-const VALID_DURATIONS = [50, 110, 170];
+const VALID_DURATIONS = [50, 95, 110, 145, 170, 230, 290, 350, 410];
 
 let periodsCache = null;
 
@@ -154,14 +154,6 @@ export function normalizeEverytimeClassTimes(start, end, config = loadClassPerio
   return fixCommonMisreadStart({ start: minToTime(normalizedStart), end: endStr }, daytime);
 }
 
-function fixCommonMisreadStart(times, daytime) {
-  const st = timeToMin(times.start);
-  const en = timeToMin(times.end);
-  if (st == null || en == null) return times;
-  const dur = en - st;
-  if (st === timeToMin('09:00') && findStartPeriodIndex(timeToMin('10:00'), daytime) >= 0) {
-    if (dur === 110) return { start: '10:00', end: '11:50' };
-    if (dur === 170 && times.end === '11:50') return { start: '10:00', end: '11:50' };
-  }
+function fixCommonMisreadStart(times) {
   return times;
 }

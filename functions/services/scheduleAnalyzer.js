@@ -18,9 +18,16 @@ const ROOM_PREFIX_MAP = [
   ['Y22', '채플'],
   ['Y21', '학생'],
   ['Y25', '창조'],
-  ['Y7', '자연'],
-  ['Y11', '공2'],
+  ['Y23', '차세대과학관'],
+  ['Y20', '건축도시설계원'],
+  ['Y81', '2공'],
+  ['Y71', '체육관'],
+  ['Y61', '체육문화관'],
+  ['Y13', '제4공학관'],
+  ['Y12', '디자인조형센터'],
+  ['Y11', '학군단'],
   ['Y9', '자연'],
+  ['Y7', '자연'],
   ['Y5', '5공'],
   ['Y3', '명진당'],
   ['Y1', '1공'],
@@ -191,7 +198,10 @@ function normalizeClass(raw, refDow) {
 
 function analyzeFromClasses(classes, refDate) {
   const dow = refDate.getDay();
-  const noSchool = dow === 0 || dow === 6;
+  const noSchool =
+    typeof SchoolCalendar !== 'undefined' && SchoolCalendar.isNoSchoolDay
+      ? SchoolCalendar.isNoSchoolDay(refDate)
+      : dow === 0 || dow === 6;
   const nowMin = refDate.getHours() * 60 + refDate.getMinutes();
   const today = noSchool ? [] : classes.filter((c) => c.dow === dow).sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
 
@@ -231,7 +241,7 @@ function analyzeFromClasses(classes, refDate) {
   let gapMin = 0;
   if (nextClass) gapMin = Math.max(0, timeToMin(nextClass.start) - gapFrom);
   else if (noSchool || !today.length) gapMin = 240;
-  else if (lastEnded || inClass) gapMin = Math.max(90, 17 * 60 - gapFrom);
+  else if (lastEnded || inClass) gapMin = Math.max(0, 17 * 60 - gapFrom);
   else gapMin = 75;
 
   const curTxt = inClass
@@ -304,18 +314,18 @@ function buildTimeGuide() {
   return `명지대 에브리타임 시간표 교시 규칙 (반드시 준수):
 1) 아래 명지대 2026-1학기 주간 교시표를 기준으로 start/end를 읽음. start는 교시 시작(:00), end는 :50 종료.
 ${formatPeriodTableForPrompt(loadClassPeriods())}
-   - 연속 교시(최대 3교시)는 하나의 블록 → end는 마지막 교시의 :50 (예: 14:00~16:50)
+   - 연속 교시(최대 3교시, 실험수업 230·290·350·410분 블록도 허용)는 하나의 블록 → end는 마지막 교시의 :50 (예: 14:00~16:50)
    - 종료(end)는 반드시 :50. :00으로 끝나는 end는 절대 반환하지 마.
 2) 블록 시작 행 = start, 블록 끝 행 시간 + 50분 = end (높이 추정 금지).
    - 6교시 1개: 14:00~14:50 / 6+7교시: 14:00~15:50 / 6+7+8교시: 14:00~16:50
 3) 같은 요일·다른 과목 블록은 classes에 각각 분리.
 4) **색·과목명이 다른 인접 블록은 합치지 마** — 15:00~15:50 SoC설계 와 16:00~16:50 반도체소자는 **별도 2개** (15:00~16:50 한 덩어리 금지).
 5) **모든 요일·오전·오후(09:00~17:50) 수업 블록을 빠짐없이** 읽을 것.
-6) start는 시간축 **행 라벨과 정확히 일치** (10시 행→10:00). 2교시 연속은 10:00~11:50 (09:00~10:50 아님).
+6) start는 시간축 **행 라벨과 정확히 일치** (10시 행→10:00). 2교시 연속은 10:00~11:50, 09:00~10:50도 가능.
 7) 2·3교시 **한 블록·한 과목**일 때만 연속 end (10:00~11:50, 13:00~14:50).`;
 }
 
-const ROOM_GUIDE = `호실→buildingKey: Y1→1공, Y19→3공, Y5→5공, Y3→명진당, Y11→공2, Y7/Y9→자연, Y21→학생, Y22/채플→채플, Y25/창조→창조.
+const ROOM_GUIDE = `호실→buildingKey: Y1→1공, Y19→3공, Y5→5공, Y3→명진당, Y11→학군단, Y7/Y9→자연, Y21→학생, Y22/채플→채플, Y25/창조→창조.
 buildingKey 허용: ${BUILDING_KEYS_LIST}.
 에브리타임 열 dow: 월=1, 화=2, 수=3, 목=4, 금=5, 토=6, 일=0.`;
 

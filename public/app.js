@@ -1090,7 +1090,7 @@ function kstTimeFloat(ref) {
 /** 점심/저녁 운영 여부 판별용 기준 시각 (내일 탭·예측) */
 function mealOpenRef(baseRef, mealPeriod) {
   const ref = new Date(baseRef.getTime());
-  if (mealPeriod === 'lunch') ref.setHours(12, 30, 0, 0);
+  if (mealPeriod === 'lunch') ref.setHours(12, 50, 0, 0);
   else ref.setHours(17, 45, 0, 0);
   return ref;
 }
