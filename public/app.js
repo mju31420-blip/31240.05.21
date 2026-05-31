@@ -37,25 +37,20 @@ async function getMbFirestoreApi() {
   return _mbFirestoreApi;
 }
 
-/** 동일 uid 세션은 갱신, 없을 때만 추가 */
+/** uid를 문서 ID로 setDoc upsert (sessions 읽기 불필요) */
 async function saveSessionByUid(data) {
-  const { db, collection, query, where, limit, getDocs, doc, updateDoc, addDoc } = await getMbFirestoreApi();
+  const { db, doc, setDoc } = await getMbFirestoreApi();
+  const sessionId = String(data.uid || '').trim();
+  if (!sessionId) return null;
   const payload = {
-    uid: data.uid,
+    uid: sessionId,
     buildings: data.buildings || [],
     gapMin: data.gapMin ?? 0,
     timestamp: data.timestamp || new Date(),
     visited: !!data.visited,
   };
-  const q = query(collection(db, 'sessions'), where('uid', '==', data.uid), limit(1));
-  const snap = await getDocs(q);
-  if (!snap.empty) {
-    const existingId = snap.docs[0].id;
-    await updateDoc(doc(db, 'sessions', existingId), payload);
-    return existingId;
-  }
-  const ref = await addDoc(collection(db, 'sessions'), payload);
-  return ref.id;
+  await setDoc(doc(db, 'sessions', sessionId), payload, { merge: true });
+  return sessionId;
 }
 
 async function persistAnalysisSession(curKey, nextKey, gapMin) {
@@ -541,9 +536,14 @@ async function fetchWeather() {
     const res = await fetch(
       'https://api.open-meteo.com/v1/forecast?latitude=37.2219&longitude=127.1887&current=temperature_2m,weathercode&timezone=Asia%2FSeoul',
     );
+    if (!res.ok) throw new Error(`날씨 API HTTP ${res.status}`);
     const data = await res.json();
-    const temp = Math.round(data.current.temperature_2m);
-    const code = data.current.weathercode;
+    const tempRaw = data.current?.temperature_2m;
+    const code = data.current?.weathercode;
+    if (tempRaw === undefined || code === undefined) {
+      throw new Error('날씨 API 응답 형식 오류');
+    }
+    const temp = Math.round(tempRaw);
     let icon, label;
     if (code === 0) {
       icon = '☀️';
