@@ -45,13 +45,13 @@ service cloud.firestore {
     }
 
     match /sessions/{id} {
-      allow read: if true;
+      allow read: if false;
       allow create, update: if validSession();
       allow delete: if false;
     }
 
     match /visits/{id} {
-      allow read: if true;
+      allow read: if false;
       allow create: if validVisit();
       allow update, delete: if false;
     }

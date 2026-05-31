@@ -206,6 +206,57 @@ app.post(['/api/analyze/timetable', '/analyze/timetable'], rateLimit({ windowMs:
   }
 });
 
+const DASHBOARD_PASSWORD = '31420';
+
+function dashboardPasswordOk(req) {
+  const fromHeader = String(req.headers['x-dashboard-password'] || '').trim();
+  const fromBody = String(req.body?.password ?? '').trim();
+  return fromHeader === DASHBOARD_PASSWORD || fromBody === DASHBOARD_PASSWORD;
+}
+
+function firestoreDocToJson(doc) {
+  const data = doc.data();
+  const row = { id: doc.id, ...data };
+  for (const [key, value] of Object.entries(row)) {
+    if (value && typeof value.toDate === 'function') {
+      row[key] = value.toDate().toISOString();
+    }
+  }
+  return row;
+}
+
+async function loadDashboardCollection(name) {
+  const db = getDb();
+  try {
+    const snap = await db.collection(name).orderBy('timestamp', 'desc').limit(2000).get();
+    return snap.docs.map(firestoreDocToJson);
+  } catch (err) {
+    console.warn(`[api/dashboard] ${name} orderBy fallback`, err.message);
+    const snap = await db.collection(name).limit(2000).get();
+    return snap.docs.map(firestoreDocToJson);
+  }
+}
+
+async function handleDashboard(req, res) {
+  if (!dashboardPasswordOk(req)) {
+    return res.status(401).json({ ok: false, error: '비밀번호가 올바르지 않습니다.' });
+  }
+  try {
+    const [visits, sessions] = await Promise.all([
+      loadDashboardCollection('visits'),
+      loadDashboardCollection('sessions'),
+    ]);
+    res.json({ ok: true, visits, sessions });
+  } catch (err) {
+    console.error('[api/dashboard]', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+}
+
+/** 대시보드 전용 — Admin SDK로 visits·sessions 조회 (비밀번호 일치 시만) */
+app.get(['/api/dashboard', '/dashboard'], rateLimit({ windowMs: 60 * 1000, max: 30 }), handleDashboard);
+app.post(['/api/dashboard', '/dashboard'], rateLimit({ windowMs: 60 * 1000, max: 30 }), handleDashboard);
+
 /** Hosting rewrite: /api/** → 이 함수 (경로 그대로 전달) */
 function applySecrets() {
   if (anthropicApiKey.value()) process.env.ANTHROPIC_API_KEY = anthropicApiKey.value();

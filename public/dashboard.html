@@ -451,22 +451,11 @@
 </div>
 
 <script type="module">
-  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-  import {
-    getFirestore,
-    collection,
-    getDocs,
-    query,
-    orderBy,
-    limit,
-    connectFirestoreEmulator,
-  } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
-
   const PASS = '31420';
   const RESTS = ['기숙사', '명진당', '교직원', '학생회관'];
   const chartInstances = [];
   let store = { sessions: [], visits: [] };
-  let firebaseApp = null;
+  let dashboardPassword = '';
 
   const gate = document.getElementById('gate');
   const dash = document.getElementById('dash');
@@ -683,21 +672,7 @@
     return [...map.values()].sort((a, b) => b.count - a.count);
   }
 
-  /* ── Firestore ── */
-  async function fetchCollection(db, name) {
-    try {
-      const snap = await getDocs(query(collection(db, name), orderBy('timestamp', 'desc'), limit(2000)));
-      return { docs: snap.docs, ok: true, err: null };
-    } catch (e) {
-      try {
-        const snap = await getDocs(collection(db, name));
-        return { docs: snap.docs, ok: true, err: e.message };
-      } catch (e2) {
-        return { docs: [], ok: false, err: e2.message };
-      }
-    }
-  }
-
+  /* ── 대시보드 API ── */
   async function loadData() {
     const localVisits = loadLocalVisits();
     let remoteVisits = [];
@@ -707,39 +682,23 @@
     let visitOk = false;
     let sessionOk = false;
 
-    let firebaseConfig = { projectId: 'myeong-biseo-v2' };
-    try {
-      const res = await fetch('/__/firebase/init.json');
-      if (res.ok) firebaseConfig = await res.json();
-    } catch (e) {
-      console.warn('init.json', e);
-    }
-
-    const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    const password =
+      dashboardPassword || pwIn.value || sessionStorage.getItem('mb_dash_pw') || '';
 
     try {
-      if (!firebaseApp) {
-        try {
-          firebaseApp = initializeApp(firebaseConfig, 'mb-dash');
-        } catch {
-          firebaseApp = initializeApp(firebaseConfig);
-        }
+      const res = await fetch('/api/dashboard', {
+        headers: { 'x-dashboard-password': password },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) {
+        const msg = body.error || `HTTP ${res.status}`;
+        visitErr = sessionErr = msg;
+      } else {
+        remoteVisits = (body.visits || []).map((d) => normalizeVisit(d));
+        remoteSessions = (body.sessions || []).map((d) => ({ id: d.id, ...normalizeSession(d) }));
+        visitOk = true;
+        sessionOk = true;
       }
-      const db = getFirestore(firebaseApp);
-      if (isLocal) {
-        try {
-          connectFirestoreEmulator(db, '127.0.0.1', 8080);
-        } catch (e) {
-          console.warn('emulator', e.message);
-        }
-      }
-      const [vRes, sRes] = await Promise.all([fetchCollection(db, 'visits'), fetchCollection(db, 'sessions')]);
-      remoteVisits = vRes.docs.map((doc) => normalizeVisit(doc.data()));
-      remoteSessions = sRes.docs.map((doc) => ({ id: doc.id, ...normalizeSession(doc.data()) }));
-      visitOk = vRes.ok;
-      sessionOk = sRes.ok;
-      visitErr = vRes.err;
-      sessionErr = sRes.err;
     } catch (e) {
       visitErr = sessionErr = e.message;
     }
@@ -835,7 +794,7 @@
       ? top5
           .map(
             ([name, cnt], i) =>
-              `<tr><td>${i + 1}</td><td>${name}</td><td><b>${cnt}</b></td><td>${patternByBld[name]?.size ?? 0}</td></tr>`,
+              `<tr><td>${i + 1}</td><td>${escapeHtml(name)}</td><td><b>${cnt}</b></td><td>${patternByBld[name]?.size ?? 0}</td></tr>`,
           )
           .join('')
       : '<tr><td colspan="4" style="color:var(--sub)">세션 없음</td></tr>';
@@ -1029,7 +988,9 @@
     if (data.remoteVisits.length) pills.push(`Firestore 방문 ${data.remoteVisits.length}`);
     if (data.remoteSessions.length) pills.push(`Firestore 세션 ${data.remoteSessions.length}`);
     else pills.push('Firestore 세션 0');
-    document.getElementById('srcPills').innerHTML = pills.map((t) => `<span class="pill">${t}</span>`).join('');
+    document.getElementById('srcPills').innerHTML = pills
+      .map((t) => `<span class="pill">${escapeHtml(t)}</span>`)
+      .join('');
 
     const warn = document.getElementById('warnBox');
     const hasData = data.sessions.length || data.visits.length;
@@ -1063,7 +1024,9 @@
 
   function tryLogin() {
     if (pwIn.value === PASS) {
+      dashboardPassword = pwIn.value;
       sessionStorage.setItem('mb_dash_ok', '1');
+      sessionStorage.setItem('mb_dash_pw', pwIn.value);
       gate.style.display = 'none';
       dash.classList.add('on');
       boot();
@@ -1079,6 +1042,7 @@
   });
 
   if (sessionStorage.getItem('mb_dash_ok') === '1') {
+    dashboardPassword = sessionStorage.getItem('mb_dash_pw') || '';
     gate.style.display = 'none';
     dash.classList.add('on');
     boot();
