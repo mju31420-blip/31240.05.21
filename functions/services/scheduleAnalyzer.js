@@ -2,9 +2,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { BUILDING_KEYS, BUILDING_LABELS } from '../config.js';
 import { computeMealIntent } from './mealIntent.js';
 import {
-  getLectureList,
+  findLectureNameForClass,
   loadLectureDb,
-  normalizeLectureEntry,
   resolveCurrentLocationTxt,
 } from './lectureMatcher.js';
 import {
@@ -207,180 +206,13 @@ function normalizeClass(raw, refDow) {
   };
 }
 
-function normRoom(r) {
-  if (!r) return '';
-  return String(r).toUpperCase().replace(/[\s-]/g, '');
-}
-
-function roomsMatch(clsRoom, entryRoom) {
-  const a = normRoom(clsRoom);
-  const b = normRoom(entryRoom);
-  if (!a || !b) return false;
-  return a === b || a.includes(b) || b.includes(a);
-}
-
-function normName(n) {
-  if (!n) return '';
-  return String(n).trim().replace(/\s+/g, '');
-}
-
-function pickClosestByTime(candidates, cls) {
-  if (!candidates.length) return null;
-  if (candidates.length === 1) return candidates[0];
-
-  const clsStart = timeToMin(cls.start);
-  const clsEnd = timeToMin(cls.end);
-  if (clsStart != null) {
-    const exact = candidates.filter(
-      (e) => timeToMin(e.start) === clsStart && (clsEnd == null || timeToMin(e.end) === clsEnd),
-    );
-    if (exact.length) return exact[0];
-    return [...candidates].sort((a, b) => {
-      const scoreA =
-        Math.abs(timeToMin(a.start) - clsStart) +
-        Math.abs(timeToMin(a.end) - (clsEnd ?? timeToMin(a.end)));
-      const scoreB =
-        Math.abs(timeToMin(b.start) - clsStart) +
-        Math.abs(timeToMin(b.end) - (clsEnd ?? timeToMin(b.end)));
-      return scoreA - scoreB;
-    })[0];
-  }
-  return candidates[0];
-}
-
-/** 요일·강의실로 lecture_db 항목 조회 (동일 호실·요일이 여러 개면 AI 시간에 가장 가까운 항목) */
-function findLectureEntryByRoomAndDow(cls, db, refDow) {
-  const list = getLectureList(db);
-  if (!cls || cls.dow == null || !list.length || !normRoom(cls.room)) return null;
-
-  const entries = list
-    .map((e) => normalizeLectureEntry(e, refDow))
-    .filter((e) => e.dow === cls.dow && e.start && e.end && e.name);
-
-  const candidates = entries.filter((e) => roomsMatch(cls.room, e.room));
-  return pickClosestByTime(candidates, cls);
-}
-
-/** 요일·과목명으로 lecture_db 항목 조회 (동일 과목·요일이 여러 개면 AI 시간에 가장 가까운 항목) */
-function findLectureEntryByNameAndDow(cls, db, refDow) {
-  const list = getLectureList(db);
-  if (!cls || cls.dow == null || !list.length || !normName(cls.name)) return null;
-
-  const target = normName(cls.name);
-  const entries = list
-    .map((e) => normalizeLectureEntry(e, refDow))
-    .filter((e) => e.dow === cls.dow && e.start && e.end && e.name && normName(e.name) === target);
-
-  return pickClosestByTime(entries, cls);
-}
-
-function findLectureEntriesByRoom(room, db, refDow) {
-  const list = getLectureList(db);
-  if (!normRoom(room) || !list.length) return [];
-  return list
-    .map((e) => normalizeLectureEntry(e, refDow))
-    .filter((e) => e.start && e.end && e.name && roomsMatch(room, e.room));
-}
-
-function entryToClass(entry, fallbackBuildingKey) {
-  const key =
-    entry.buildingKey && BUILDING_LABELS[entry.buildingKey]
-      ? entry.buildingKey
-      : resolveRoomToBuildingKey(entry.room, fallbackBuildingKey) ||
-        resolveBuildingKey(entry.buildingKey) ||
-        fallbackBuildingKey ||
-        '3공';
-  return {
-    dow: entry.dow,
-    start: entry.start,
-    end: entry.end,
-    name: entry.name,
-    room: entry.room || '',
-    buildingKey: key,
-    teacher: '',
-  };
-}
-
-function normTimeKey(t) {
-  if (!t) return '';
-  const m = String(t).match(/(\d{1,2}):(\d{2})/);
-  if (!m) return String(t).trim();
-  return `${String(parseInt(m[1], 10)).padStart(2, '0')}:${m[2]}`;
-}
-
-function classSlotKey(c) {
-  return `${c.dow}|${normTimeKey(c.start)}|${normTimeKey(c.end)}|${normRoom(c.room)}`;
-}
-
-function dedupeClasses(classes) {
-  const seen = new Set();
-  const out = [];
-  for (const c of classes) {
-    const key = classSlotKey(c);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(c);
-  }
-  return out;
-}
-
-/** OCR 결과 저장 시 incoming에 포함된 요일은 기존 수업을 덮어씀 */
-export function mergeOcrTimetableClasses(existing, incoming) {
-  if (!incoming?.length) return dedupeClasses(existing || []);
-  const incomingDows = new Set(incoming.map((c) => c.dow));
-  const kept = (existing || []).filter((c) => !incomingDows.has(c.dow));
-  return dedupeClasses([...kept, ...incoming]);
-}
-
-function correctClassFromLectureDb(cls, db, refDow) {
-  const roomHit = findLectureEntryByRoomAndDow(cls, db, refDow);
-  if (roomHit) {
-    return { ...cls, start: roomHit.start, end: roomHit.end, name: roomHit.name };
-  }
-
-  const nameHit = findLectureEntryByNameAndDow(cls, db, refDow);
-  if (nameHit) {
-    return {
-      ...cls,
-      start: nameHit.start,
-      end: nameHit.end,
-      room: nameHit.room || cls.room,
-      buildingKey: entryToClass(nameHit, cls.buildingKey).buildingKey,
-    };
-  }
-
-  return cls;
-}
-
-function addMissingRoomLectures(classes, db, refDow) {
-  if (!db || !classes?.length) return dedupeClasses(classes || []);
-
-  const base = dedupeClasses(classes);
-  const roomByNorm = new Map();
-  for (const c of base) {
-    const nr = normRoom(c.room);
-    if (nr && !roomByNorm.has(nr)) roomByNorm.set(nr, c.room);
-  }
-
-  const existing = new Set(base.map(classSlotKey));
-  const extra = [];
-  for (const room of roomByNorm.values()) {
-    for (const entry of findLectureEntriesByRoom(room, db, refDow)) {
-      const added = entryToClass(entry, resolveRoomToBuildingKey(room, null));
-      const key = classSlotKey(added);
-      if (existing.has(key)) continue;
-      existing.add(key);
-      extra.push(added);
-    }
-  }
-
-  return dedupeClasses([...base, ...extra]);
-}
-
-function correctClassesFromLectureDb(classes, db, refDow) {
-  if (!db || !classes?.length) return dedupeClasses(classes || []);
-  const corrected = classes.map((cls) => correctClassFromLectureDb(cls, db, refDow));
-  return addMissingRoomLectures(corrected, db, refDow);
+/** lecture_db 매칭 성공 시 name만 보정 */
+function enrichClassNamesFromLectureDb(classes, db, refDow) {
+  if (!db || !classes?.length) return classes;
+  return classes.map((cls) => {
+    const matched = findLectureNameForClass(cls, db, refDow);
+    return matched ? { ...cls, name: matched } : cls;
+  });
 }
 
 function analyzeFromClasses(classes, refDate) {
@@ -450,18 +282,14 @@ function analyzeFromClasses(classes, refDate) {
 /**
  * 검증된 AI 필드만 사용. 수업 목록이 있으면 위치·공강은 서버에서만 계산(AI 스칼라 무시).
  */
-function refineFromSanitized(sanitized, refDate, existingClasses) {
+function refineFromSanitized(sanitized, refDate) {
   const refDow = refDate.getDay();
   const classes = sanitized.classes.map((c) => normalizeClass(c, refDow)).filter(Boolean);
   console.log('[OCR] before DB correction:', JSON.stringify(classes));
-  const corrected = correctClassesFromLectureDb(classes, loadLectureDb(), refDow);
+  const corrected = enrichClassNamesFromLectureDb(classes, loadLectureDb(), refDow);
   console.log('[OCR] after DB correction:', JSON.stringify(corrected));
-  const merged =
-    Array.isArray(existingClasses) && existingClasses.length && corrected.length
-      ? mergeOcrTimetableClasses(existingClasses, corrected)
-      : corrected;
 
-  if (!merged.length) {
+  if (!corrected.length) {
     return {
       curKey: sanitized.curKey || '3공',
       curTxt: sanitized.curTxt || '캠퍼스',
@@ -475,7 +303,7 @@ function refineFromSanitized(sanitized, refDate, existingClasses) {
     };
   }
 
-  const computed = analyzeFromClasses(merged, refDate);
+  const computed = analyzeFromClasses(corrected, refDate);
   return {
     curKey: computed.curKey,
     curTxt: computed.curTxt,
@@ -486,7 +314,7 @@ function refineFromSanitized(sanitized, refDate, existingClasses) {
     lastEnded: computed.lastEnded,
     nextClass: computed.nextClass,
     today: computed.today,
-    classes: merged,
+    classes: corrected,
     warnings: [],
     gapSource: 'timetable_classes',
   };
@@ -532,7 +360,7 @@ const ROOM_GUIDE = `호실→buildingKey: Y1→1공, Y19→3공, Y5→5공, Y3�
 buildingKey 허용: ${BUILDING_KEYS_LIST}.
 에브리타임 열 dow: 월=1, 화=2, 수=3, 목=4, 금=5, 토=6, 일=0.`;
 
-export async function analyzeTimetableImage({ imageBase64, mediaType = 'image/jpeg', apiKey, existingClasses }) {
+export async function analyzeTimetableImage({ imageBase64, mediaType = 'image/jpeg', apiKey }) {
   const client = getClient(apiKey);
   if (!client) {
     const err = new Error('ANTHROPIC_API_KEY가 설정되지 않았습니다. Firebase Secret을 설정해 주세요.');
@@ -615,7 +443,7 @@ ${SCHEMA_HINT}`,
   }
 
   const sanitized = sanitizeAiTimetableResponse(parsed);
-  const refined = refineFromSanitized(sanitized, now, existingClasses);
+  const refined = refineFromSanitized(sanitized, now);
   const mealIntent = computeMealIntent(refined.gapMin, now);
   const lectureDb = loadLectureDb();
   const curTxt = resolveCurrentLocationTxt(refined, lectureDb, BUILDING_LABELS, now.getDay());
