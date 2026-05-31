@@ -78,18 +78,27 @@ const BUILDING_ALIASES = {
 };
 
 const ROOM_PREFIX_MAP = [
+  ['Y86', '2공'],
+  ['Y85', '2공'],
+  ['Y83', '2공'],
   ['Y81', '2공'],
   ['Y71', '체육관'],
+  ['Y64', '체육문화관'],
+  ['Y63', '체육문화관'],
+  ['Y62', '체육문화관'],
   ['Y61', '체육문화관'],
+  ['Y27', '차세대과학관'],
   ['Y25', '창조'],
+  ['Y24', '차세대과학관'],
   ['Y23', '차세대과학관'],
   ['Y19', '3공'],
+  ['Y17', '3공'],
   ['Y13', '제4공학관'],
   ['Y12', '디자인조형센터'],
   ['Y22', '채플'],
   ['Y21', '학생'],
   ['Y20', '건축도시설계원'],
-  ['Y11', '공2'],
+  ['Y11', '학군단'],
   ['Y7', '자연'],
   ['Y9', '자연'],
   ['Y5', '5공'],
@@ -182,6 +191,7 @@ function endForSpan(startIdx, periodCount, daytime) {
 }
 
 function inferPeriodCountFromEndRow(startMin, endMin, daytime) {
+  const maxPeriods = _classPeriodsCache?.consecutiveSpan?.maxDaytimePeriods ?? 8;
   const startIdx = findStartPeriodIndex(startMin, daytime);
   if (startIdx < 0) return null;
 
@@ -189,7 +199,7 @@ function inferPeriodCountFromEndRow(startMin, endMin, daytime) {
   const endHour = Math.floor(endMin / 60);
 
   if (endMinPart === 50) {
-    for (let count = 1; count <= 3; count++) {
+    for (let count = 1; count <= maxPeriods; count++) {
       const expected = endForSpan(startIdx, count, daytime);
       if (expected && t2m(expected) === endMin) return count;
     }
@@ -198,12 +208,12 @@ function inferPeriodCountFromEndRow(startMin, endMin, daytime) {
 
   if (endMinPart === 0) {
     const targetEnd = endHour * 60 + 50;
-    for (let count = 1; count <= 3; count++) {
+    for (let count = 1; count <= maxPeriods; count++) {
       const expected = endForSpan(startIdx, count, daytime);
       if (expected && t2m(expected) === targetEnd) return count;
     }
     const hourSpan = Math.max(1, endHour - Math.floor(startMin / 60));
-    if (hourSpan <= 3) return hourSpan;
+    if (hourSpan <= maxPeriods) return hourSpan;
   }
 
   return null;
@@ -212,6 +222,7 @@ function inferPeriodCountFromEndRow(startMin, endMin, daytime) {
 function normalizeEverytimeClassTimes(start, end) {
   const daytime = getDaytimePeriods();
   const durations = _classPeriodsCache?.consecutiveSpan?.durationsMin || VALID_PERIOD_DURATIONS;
+  const maxPeriods = _classPeriodsCache?.consecutiveSpan?.maxDaytimePeriods ?? 8;
 
   const st = t2m(start);
   let en = t2m(end);
@@ -229,7 +240,7 @@ function normalizeEverytimeClassTimes(start, end) {
     const endHour = Math.floor(en / 60);
     if (endMinPart === 0) {
       const targetEnd = endHour * 60 + 50;
-      for (let count = 1; count <= 3; count++) {
+      for (let count = 1; count <= maxPeriods; count++) {
         const expected = endForSpan(startIdx, count, daytime);
         if (expected && t2m(expected) === targetEnd) {
           periodCount = count;
@@ -244,7 +255,7 @@ function normalizeEverytimeClassTimes(start, end) {
     }
   }
 
-  if (periodCount == null || periodCount < 1 || periodCount > 3) return null;
+  if (periodCount == null || periodCount < 1 || periodCount > maxPeriods) return null;
 
   const endStr = endForSpan(startIdx, periodCount, daytime);
   if (!endStr) return null;

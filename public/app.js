@@ -2205,8 +2205,11 @@ function buildShuttleUpcomingList(events, nowM, streamMoving = false) {
 const SHUTTLE_DOW_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
 
 function getWeekendShuttleReturn(schedule) {
-  const dow = getKstNow().getDay();
-  if (dow !== 0 && dow !== 6) return null;
+  const now = getKstNow();
+  const dow = now.getDay();
+  const isHoliday =
+    typeof SchoolCalendar !== 'undefined' && SchoolCalendar.isHoliday && SchoolCalendar.isHoliday(now);
+  if (dow !== 0 && dow !== 6 && !isHoliday) return null;
   const tomorrow = (dow + 1) % 7;
   const isWeekday = tomorrow >= 1 && tomorrow <= 5;
   return {
@@ -2223,7 +2226,11 @@ function getWeekendShuttleReturn(schedule) {
 }
 
 function getTomorrowViewWeekendReturn(schedule, viewDow) {
-  if (viewDow !== 0 && viewDow !== 6) return null;
+  const tomorrow = new Date(getKstNow());
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const isHoliday =
+    typeof SchoolCalendar !== 'undefined' && SchoolCalendar.isHoliday && SchoolCalendar.isHoliday(tomorrow);
+  if (viewDow !== 0 && viewDow !== 6 && !isHoliday) return null;
   const dayAfter = (viewDow + 1) % 7;
   const isWeekday = dayAfter >= 1 && dayAfter <= 5;
   return {

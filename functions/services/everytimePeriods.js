@@ -80,6 +80,7 @@ function endForSpan(startIdx, periodCount, daytime) {
 }
 
 function inferPeriodCountFromEndRow(startMin, endMin, daytime) {
+  const maxPeriods = periodsCache?.consecutiveSpan?.maxDaytimePeriods ?? 8;
   const startIdx = findStartPeriodIndex(startMin, daytime);
   if (startIdx < 0) return null;
 
@@ -87,7 +88,7 @@ function inferPeriodCountFromEndRow(startMin, endMin, daytime) {
   const endHour = Math.floor(endMin / 60);
 
   if (endMinPart === 50) {
-    for (let count = 1; count <= 3; count++) {
+    for (let count = 1; count <= maxPeriods; count++) {
       const expected = endForSpan(startIdx, count, daytime);
       if (expected && timeToMin(expected) === endMin) return count;
     }
@@ -96,12 +97,12 @@ function inferPeriodCountFromEndRow(startMin, endMin, daytime) {
 
   if (endMinPart === 0) {
     const targetEnd = endHour * 60 + 50;
-    for (let count = 1; count <= 3; count++) {
+    for (let count = 1; count <= maxPeriods; count++) {
       const expected = endForSpan(startIdx, count, daytime);
       if (expected && timeToMin(expected) === targetEnd) return count;
     }
     const hourSpan = Math.max(1, endHour - Math.floor(startMin / 60));
-    if (hourSpan <= 3) return hourSpan;
+    if (hourSpan <= maxPeriods) return hourSpan;
   }
 
   return null;
@@ -111,6 +112,7 @@ function inferPeriodCountFromEndRow(startMin, endMin, daytime) {
 export function normalizeEverytimeClassTimes(start, end, config = loadClassPeriods()) {
   const daytime = getDaytimePeriods(config);
   const durations = config?.consecutiveSpan?.durationsMin || VALID_DURATIONS;
+  const maxPeriods = config?.consecutiveSpan?.maxDaytimePeriods ?? 8;
 
   const st = timeToMin(start);
   let en = timeToMin(end);
@@ -128,7 +130,7 @@ export function normalizeEverytimeClassTimes(start, end, config = loadClassPerio
     const endHour = Math.floor(en / 60);
     if (endMinPart === 0) {
       const targetEnd = endHour * 60 + 50;
-      for (let count = 1; count <= 3; count++) {
+      for (let count = 1; count <= maxPeriods; count++) {
         const expected = endForSpan(startIdx, count, daytime);
         if (expected && timeToMin(expected) === targetEnd) {
           periodCount = count;
@@ -143,7 +145,7 @@ export function normalizeEverytimeClassTimes(start, end, config = loadClassPerio
     }
   }
 
-  if (periodCount == null || periodCount < 1 || periodCount > 3) return null;
+  if (periodCount == null || periodCount < 1 || periodCount > maxPeriods) return null;
 
   const endStr = endForSpan(startIdx, periodCount, daytime);
   if (!endStr) return null;

@@ -22,7 +22,7 @@
     { "period": 15, "start": "22:00", "end": "22:45" }
   ],
   "consecutiveSpan": {
-    "maxDaytimePeriods": 3,
-    "durationsMin": [50, 110, 170]
+    "maxDaytimePeriods": 8,
+    "durationsMin": [50, 95, 110, 145, 170, 230, 290, 350, 410]
   }
 }

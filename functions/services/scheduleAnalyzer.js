@@ -15,13 +15,22 @@ const clientCache = new Map();
 
 const ROOM_PREFIX_MAP = [
   ['Y19', '3공'],
+  ['Y17', '3공'],
   ['Y22', '채플'],
   ['Y21', '학생'],
+  ['Y27', '차세대과학관'],
   ['Y25', '창조'],
+  ['Y24', '차세대과학관'],
   ['Y23', '차세대과학관'],
   ['Y20', '건축도시설계원'],
+  ['Y86', '2공'],
+  ['Y85', '2공'],
+  ['Y83', '2공'],
   ['Y81', '2공'],
   ['Y71', '체육관'],
+  ['Y64', '체육문화관'],
+  ['Y63', '체육문화관'],
+  ['Y62', '체육문화관'],
   ['Y61', '체육문화관'],
   ['Y13', '제4공학관'],
   ['Y12', '디자인조형센터'],
@@ -184,7 +193,7 @@ function normalizeClass(raw, refDow) {
   const times = normalizeEverytimeClassTimes(startRaw, endRaw);
   if (!times) return null;
   const dow = normalizeDow(raw.dow != null ? raw.dow : raw.요일, refDow);
-  const key = buildingKey && BUILDING_LABELS[buildingKey] ? buildingKey : '3공';
+  const key = buildingKey && BUILDING_LABELS[buildingKey] ? buildingKey : resolveBuildingKey(buildingKey) || '3공';
   return {
     dow,
     start: times.start,
