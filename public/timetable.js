@@ -432,25 +432,14 @@ function dedupeOverlappingClasses(classes) {
           break;
         }
         if (spansContain(k, c)) {
-          if (!sameSubject(k, c)) {
-            const trimmed = trimClassBeforeStart(k, c, daytime);
-            if (trimmed) kept[i] = trimmed;
-          } else {
+          if (sameSubject(k, c)) {
             kept[i] = pickBetterClass(k, c);
             merged = true;
           }
           break;
         }
         if (spansContain(c, k)) {
-          if (!sameSubject(c, k)) {
-            const trimmed = trimClassBeforeStart(c, k, daytime);
-            if (trimmed) {
-              kept.push(trimmed);
-              merged = true;
-            } else {
-              merged = true;
-            }
-          } else {
+          if (sameSubject(c, k)) {
             kept[i] = pickBetterClass(k, c);
             merged = true;
           }
@@ -798,7 +787,7 @@ function populateBuildingSelects() {
     { value: '1공', label: '제1공학관 (Y_)' },
     { value: '창조', label: '창조예술관 (Y2)' },
     { value: '5공', label: '제5공학관 (Y5)' },
-    { value: '공2', label: '제2공학관 (Y8)' },
+    { value: '2공', label: '제2공학관 (Y8)' },
     { value: '자연', label: '항박관 (Y9)' },
     { value: '명진당', label: '명진당 (Y3)' },
     { value: '학생', label: '학생복지관 (Y21)' },
