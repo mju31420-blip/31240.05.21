@@ -1693,7 +1693,7 @@ function buildTomorrow(cur, period) {
       식당[key] = { 상태: 'closed', 배지: '운영 종료', 도보분: walkMin, 대기분: 0, 혼잡도: 0, 추천여부: false, 메뉴: [] };
       return;
     }
-    const cong = getDynamicCrowd(key, tomorrowRef);
+    const cong = getDynamicCrowd(key, openRef);
     const wait = waitMin(cong);
     const st = cong >= 80 ? 'bad' : cong >= 55 ? 'warn' : 'ok';
     const BDGS = { ok: '원활', warn: '혼잡 주의', bad: '대기 길음' };

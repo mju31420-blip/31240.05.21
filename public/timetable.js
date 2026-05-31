@@ -36,7 +36,7 @@ const CAMPUS_BUILDINGS = [
   { key: '2공', label: '제2공학관' },
   { key: '3공', label: '제3공학관 (Y19)' },
   { key: '5공', label: '제5공학관 (Y5)' },
-  { key: '공2', label: '제2공학관 (Y11)' },
+  { key: '공2', label: '제2공학관 (Y8)' },
   { key: '명진당', label: '명진당 (Y3)' },
   { key: '자연', label: '항박관 (Y9)' },
   { key: '학생', label: '학생복지관 (Y21)' },
