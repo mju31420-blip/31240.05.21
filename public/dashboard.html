@@ -733,7 +733,7 @@
 
     document.getElementById('kpiToday').innerHTML = [
       kpiCard('오늘 고유 사용자', t.uniquePatterns, '같은 시간표 패턴 = 1명', true),
-      kpiCard('오늘 분석 횟수', t.total, `고유 패턴 ${t.uniquePatterns}개 · uid ${t.uniqueUids}대`, false),
+      kpiCard('오늘 고유 사용자 수', t.total, `고유 패턴 ${t.uniquePatterns}개 · uid ${t.uniqueUids}대`, false),
       kpiCard('오늘 방문 완료', t.visitedPatterns, `세션 visited ${t.visitedCount}건`, false),
       kpiCard('오늘 전환율', pct(t.visitedPatterns, t.uniquePatterns), '방문완료 패턴 ÷ 고유 패턴', false),
     ].join('');

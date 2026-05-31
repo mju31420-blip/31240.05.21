@@ -465,8 +465,8 @@ function normalizeClass(raw) {
     raw.buildingKey ||
     raw.건물키 ||
     resolveBuildingKey(raw.현재건물키) ||
-    resolveRoomToBuildingKey(room, null) ||
-    resolveBuildingKey(raw.building);
+    resolveBuildingKey(raw.building) ||
+    resolveRoomToBuildingKey(room, null);
   const startRaw = raw.start || raw.시작 || raw.startTime;
   const endRaw = raw.end || raw.종료 || raw.endTime;
   if (!startRaw || !endRaw) return null;

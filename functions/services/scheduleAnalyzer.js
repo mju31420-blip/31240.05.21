@@ -169,8 +169,8 @@ function normalizeClass(raw, refDow) {
     raw.buildingKey ||
     raw.건물키 ||
     resolveBuildingKey(raw.현재건물키) ||
-    resolveRoomToBuildingKey(room, null) ||
-    resolveBuildingKey(raw.building);
+    resolveBuildingKey(raw.building) ||
+    resolveRoomToBuildingKey(room, null);
   const startRaw = raw.start || raw.시작;
   const endRaw = raw.end || raw.종료;
   if (!startRaw || !endRaw) return null;
@@ -290,7 +290,7 @@ function refineFromSanitized(sanitized, refDate) {
 
 const SCHEMA_HINT = `{
   "classes":[
-    {"dow":1,"start":"09:00","end":"09:50","room":"Y2523","buildingKey":"자연","name":"채플"},
+    {"dow":1,"start":"09:00","end":"09:50","room":"Y2523","buildingKey":"창조","name":"채플"},
     {"dow":1,"start":"10:00","end":"11:50","room":"Y19301","buildingKey":"3공","name":"운영체제"},
     {"dow":2,"start":"14:00","end":"15:50","room":"Y5101","buildingKey":"5공","name":"디지털논리회로"},
     {"dow":3,"start":"10:00","end":"11:50","room":"Y19605","buildingKey":"3공","name":"반도체공정"},

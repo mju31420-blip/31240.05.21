@@ -982,14 +982,14 @@ const RESTAURANT_HOURS_LABEL = {
   기숙사: '점심 11:30~13:30 · 저녁 17:00~18:30',
   학생회관: '점심 11:00~14:00',
   명진당: '점심 11:30~14:30 (월~목) · 11:30~14:00 (금)',
-  교직원: '점심 12:30~13:30 · 저녁 17:30~18:30',
+  교직원: '점심 12:50~13:30 · 저녁 17:30~18:30',
 };
 
 const RESTAURANT_WINDOWS = {
   기숙사: { lunch: { start: 11.5, end: 13.5 }, dinner: { start: 17, end: 18.5 } },
   학생회관: { lunch: { start: 11, end: 14 } },
   명진당: { lunch: { start: 11.5, end: 14.5, friEnd: 14 } },
-  교직원: { lunch: { start: 12.5, end: 13.5 }, dinner: { start: 17.5, end: 18.5 } },
+  교직원: { lunch: { start: 12 + 50 / 60, end: 13.5 }, dinner: { start: 17.5, end: 18.5 } },
 };
 
 function fmtHourFloat(h) {
@@ -1116,7 +1116,7 @@ function isOpen(key, period, refDate) {
     return t >= 11.5 && t < 14.5;
   }
   if (key === '교직원') {
-    if (period === 'lunch') return t >= 12.5 && t < 13.5;
+    if (period === 'lunch') return t >= 12 + 50 / 60 && t < 13.5;
     if (period === 'dinner') return t >= 17.5 && t < 18.5;
     return false;
   }
