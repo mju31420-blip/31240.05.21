@@ -167,7 +167,7 @@ app.post(['/api/suggest', '/suggest'], rateLimit({ windowMs: 60 * 60 * 1000, max
 /** 시간표 이미지 OCR — ANTHROPIC_API_KEY (Secret / env) */
 app.post(['/api/analyze/timetable', '/analyze/timetable'], rateLimit({ windowMs: 60 * 60 * 1000, max: 20 }), async (req, res) => {
   try {
-    const { imageBase64, mediaType } = req.body || {};
+    const { imageBase64, mediaType, existingClasses } = req.body || {};
     if (!imageBase64) {
       return res.status(400).json({ ok: false, error: 'imageBase64가 필요합니다' });
     }
@@ -185,6 +185,7 @@ app.post(['/api/analyze/timetable', '/analyze/timetable'], rateLimit({ windowMs:
     const result = await analyzeTimetableImage({
       imageBase64: b64,
       mediaType: mediaType || 'image/jpeg',
+      existingClasses: Array.isArray(existingClasses) ? existingClasses : undefined,
     });
     res.json({
       ok: true,

@@ -2728,10 +2728,12 @@ async function doAnalyzeImg() {
   startLd();
 
   try {
+    const existingClasses =
+      typeof TimetableUtil !== 'undefined' ? TimetableUtil.loadUserTimetable() : [];
     const res = await fetch('/api/analyze/timetable', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageBase64: imgB64, mediaType: imgMediaType }),
+      body: JSON.stringify({ imageBase64: imgB64, mediaType: imgMediaType, existingClasses }),
     });
     const data = await res.json();
     stopLd();
