@@ -660,6 +660,21 @@ html.ob-lock,html.ob-lock body{overflow:hidden}
 <div class="toast" id="toast"></div>
 
 <script type="module" src="/analytics-sync.js?v=20260523-dash1"></script>
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+  import { getAnalytics } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js';
+
+  let firebaseConfig = { projectId: 'myeong-biseo-v2', measurementId: 'G-CYZF8YTV1G' };
+  try {
+    const res = await fetch('/__/firebase/init.json');
+    if (res.ok) firebaseConfig = { ...(await res.json()), measurementId: 'G-CYZF8YTV1G' };
+  } catch {
+    /* Hosting 배포 환경에서만 init.json 제공 */
+  }
+
+  const app = initializeApp(firebaseConfig, 'MB_ANALYTICS');
+  getAnalytics(app);
+</script>
 <script src="/utils.js?v=20260522-fix3"></script>
 <script src="/kst.js?v=20260522-fix3" defer></script>
 <script src="/schoolCalendar.js?v=20260522-fix3" defer></script>
