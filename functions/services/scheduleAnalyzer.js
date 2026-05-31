@@ -2,7 +2,6 @@ import Anthropic from '@anthropic-ai/sdk';
 import { BUILDING_KEYS, BUILDING_LABELS } from '../config.js';
 import { computeMealIntent } from './mealIntent.js';
 import {
-  findLectureNameForClass,
   loadLectureDb,
   resolveCurrentLocationTxt,
 } from './lectureMatcher.js';
@@ -206,15 +205,6 @@ function normalizeClass(raw, refDow) {
   };
 }
 
-/** lecture_db 매칭 성공 시 name만 보정 */
-function enrichClassNamesFromLectureDb(classes, db, refDow) {
-  if (!db || !classes?.length) return classes;
-  return classes.map((cls) => {
-    const matched = findLectureNameForClass(cls, db, refDow);
-    return matched ? { ...cls, name: matched } : cls;
-  });
-}
-
 function analyzeFromClasses(classes, refDate) {
   const dow = refDate.getDay();
   const noSchool =
@@ -285,11 +275,8 @@ function analyzeFromClasses(classes, refDate) {
 function refineFromSanitized(sanitized, refDate) {
   const refDow = refDate.getDay();
   const classes = sanitized.classes.map((c) => normalizeClass(c, refDow)).filter(Boolean);
-  console.log('[OCR] before DB correction:', JSON.stringify(classes));
-  const corrected = enrichClassNamesFromLectureDb(classes, loadLectureDb(), refDow);
-  console.log('[OCR] after DB correction:', JSON.stringify(corrected));
 
-  if (!corrected.length) {
+  if (!classes.length) {
     return {
       curKey: sanitized.curKey || '3공',
       curTxt: sanitized.curTxt || '캠퍼스',
@@ -303,7 +290,7 @@ function refineFromSanitized(sanitized, refDate) {
     };
   }
 
-  const computed = analyzeFromClasses(corrected, refDate);
+  const computed = analyzeFromClasses(classes, refDate);
   return {
     curKey: computed.curKey,
     curTxt: computed.curTxt,
@@ -314,7 +301,7 @@ function refineFromSanitized(sanitized, refDate) {
     lastEnded: computed.lastEnded,
     nextClass: computed.nextClass,
     today: computed.today,
-    classes: corrected,
+    classes,
     warnings: [],
     gapSource: 'timetable_classes',
   };
@@ -333,25 +320,17 @@ const SCHEMA_HINT = `{
 }`;
 
 function buildTimeGuide() {
-  return `에브리타임 주간 시간표 **이미지 읽기** (반드시 준수):
-- **색깔 블록 1개 = 독립된 수업 1개**. 블록마다 classes 항목을 1개씩 만든다 (다른 블록과 합치지 마).
-- 블록 **안에 보이는 텍스트 = 과목명(name)**. name은 블록 내부 글자를 그대로 사용.
-- **start는 블록 상단(top) 위치**가 닿는 **왼쪽 시간축 행**의 시각(:00)으로 읽는다.
-  · 블록 **중앙·하단·과목명 위치**로 start를 잡지 마. **상단 y좌표**만 기준.
-  · 예: 상단이 10시 행에 닿으면 start=10:00 (9시 행이 아님).
-- **end는 블록 하단(bottom)**이 닿는 마지막 교시 행의 :50 종료 시각.
-
-명지대 에브리타임 시간표 교시 규칙 (반드시 준수):
+  return `명지대 에브리타임 시간표 교시 규칙 (반드시 준수):
 1) 아래 명지대 2026-1학기 주간 교시표를 기준으로 start/end를 읽음. start는 교시 시작(:00), end는 :50 종료.
 ${formatPeriodTableForPrompt(loadClassPeriods())}
    - 연속 교시(최대 8교시, 실험수업 포함)는 하나의 블록 → end는 마지막 교시의 :50 (예: 14:00~16:50)
    - 종료(end)는 반드시 :50. :00으로 끝나는 end는 절대 반환하지 마.
-2) **블록 상단 행 = start**, **블록 하단 행 + :50 = end** (높이·중앙 추정 금지).
+2) 블록 시작 행 = start, 블록 끝 행 시간 + 50분 = end (높이 추정 금지).
    - 6교시 1개: 14:00~14:50 / 6+7교시: 14:00~15:50 / 6+7+8교시: 14:00~16:50
 3) 같은 요일·다른 과목 블록은 classes에 각각 분리.
 4) **색·과목명이 다른 인접 블록은 합치지 마** — 15:00~15:50 SoC설계 와 16:00~16:50 반도체소자는 **별도 2개** (15:00~16:50 한 덩어리 금지).
 5) **모든 요일·오전·오후(09:00~17:50) 수업 블록을 빠짐없이** 읽을 것.
-6) start는 **블록 상단**이 맞닿는 시간축 **행 라벨과 정확히 일치** (상단이 10시 행→10:00). 2교시 연속은 10:00~11:50, 09:00~10:50도 가능.
+6) start는 시간축 **행 라벨과 정확히 일치** (10시 행→10:00). 2교시 연속은 10:00~11:50, 09:00~10:50도 가능.
 7) 2·3교시 **한 블록·한 과목**일 때만 연속 end (10:00~11:50, 13:00~14:50).
 8) **같은 요일·같은 시간대(start~end)에 블록이 겹쳐 보이면** 과목·색·호실·buildingKey가 다를 때 **각각 classes에 별도 항목**으로 분리 (하나로 합치거나 하나만 남기지 마). 예: 월요일 10:00~11:50 수업 2개 겹침 → JSON 객체 2개.`;
 }
@@ -415,7 +394,6 @@ ${buildTimeGuide()}
 ${ROOM_GUIDE}
 
 규칙:
-- **색깔 블록 1개 = 수업 1개**. 블록 안 텍스트 → name(과목명). **start = 블록 상단**이 닿는 시간축 행(:00)
 - JSON에는 아래 키만 사용: curKey, curTxt, nextTxt, gapMin, nextKey, classes (다른 키·지시문 필드 금지)
 - classes 배열에 수업만 담기 (dow, start, end, room, buildingKey 필수 / name·teacher 선택)
 - start는 HH:00, end는 HH:50 형식만 사용 (end가 :00이면 오류)
