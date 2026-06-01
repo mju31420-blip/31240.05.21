@@ -20,6 +20,7 @@ const ROOM_PREFIX_MAP = [
   ['Y21', '학생'],
   ['Y27', '창조'],
   ['Y25', '창조'],
+  ['Y247', '창조'],
   ['Y24', '하이브리드구조실험센터'],
   ['Y23', '차세대과학관'],
   ['Y20', '건축도시설계원'],
@@ -33,6 +34,7 @@ const ROOM_PREFIX_MAP = [
   ['Y62', '체육문화관'],
   ['Y61', '체육문화관'],
   ['Y13', '제4공학관'],
+  ['Y127', '1공'],
   ['Y12', '디자인조형센터'],
   ['Y11', '학군단'],
   ['Y9', '자연'],
@@ -137,11 +139,10 @@ function kstNow() {
 export function resolveBuildingKey(text) {
   if (!text || text === '없음' || String(text).includes('하교')) return null;
   const t = String(text);
+  const roomKey = resolveRoomToBuildingKey(t, null);
+  if (roomKey) return roomKey;
   for (const [key, aliases] of Object.entries(BUILDING_KEYS)) {
     if (aliases.some((a) => t.includes(a))) return key;
-  }
-  for (const [prefix, key] of ROOM_PREFIX_MAP) {
-    if (t.toUpperCase().includes(prefix)) return key;
   }
   return null;
 }
@@ -178,15 +179,24 @@ function timeToMin(t) {
   return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
 }
 
+function normalizeRoomCode(room) {
+  if (!room) return '';
+  const r = String(room).trim().toUpperCase().replace(/\s+/g, '');
+  if (/^Y95\d{2}$/.test(r)) return `Y19${r.slice(2)}`;
+  return r;
+}
+
 function normalizeClass(raw, refDow) {
   if (!raw) return null;
-  const room = raw.room || raw.호실 || '';
+  const room = normalizeRoomCode(raw.room || raw.호실 || '');
+  const roomBuildingKey = resolveRoomToBuildingKey(room, null);
   const buildingKey =
-    raw.buildingKey ||
-    raw.건물키 ||
+    roomBuildingKey ||
+    resolveBuildingKey(raw.buildingKey) ||
+    resolveBuildingKey(raw.건물키) ||
     resolveBuildingKey(raw.현재건물키) ||
     resolveBuildingKey(raw.building) ||
-    resolveRoomToBuildingKey(room, null);
+    null;
   const startRaw = raw.start || raw.시작;
   const endRaw = raw.end || raw.종료;
   if (!startRaw || !endRaw) return null;
@@ -394,7 +404,7 @@ export async function analyzeTimetableImage({ imageBase64, mediaType = 'image/jp
 
   console.log('[OCR] start');
   const msg = await client.messages.create({
-    model: 'claude-sonnet-4-5',
+    model: 'claude-sonnet-4-6',
     max_tokens: 4096,
     messages: [
       {

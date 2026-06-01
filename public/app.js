@@ -2,7 +2,7 @@
 const SETUP_DONE_KEY = 'mb_setup_done';
 const MB_LAST_SESSION_KEY = 'mb_last_session_id';
 /** 배포·캐시 확인용 — 콘솔에서 window.MB_APP_BUILD 로 확인 */
-const MB_APP_BUILD = '2026-05-23-dash1';
+const MB_APP_BUILD = '2026-06-01-ocr-review1';
 
 function getOrCreateUid() {
   try {
@@ -632,6 +632,12 @@ function setMeal(m) {
 let hasImg = false,
   imgB64 = null,
   imgMediaType = 'image/jpeg';
+let ocrReviewState = {
+  classes: [],
+  rawApi: null,
+  appliedData: null,
+  issues: [],
+};
 
 function setMd(m) {
   document.getElementById('mMan')?.classList.toggle('on', m === 'manual');
@@ -710,13 +716,346 @@ function updateSavedTimetableUi() {
   }
 }
 
-function persistOcrClasses(apiClasses) {
-  if (!apiClasses?.length || typeof TimetableUtil === 'undefined') return;
+function ocrClassMinutes(t) {
+  const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+function ocrMinutesToTime(min, endMode = false) {
+  const h = Math.floor(min / 60);
+  const m = endMode ? 50 : 0;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function getOcrReviewClasses(apiClasses) {
+  if (typeof TimetableUtil === 'undefined') return [];
   const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
-  const normalized = TimetableUtil.normalizeClassesFromAi(apiClasses, ref.getDay());
-  if (!normalized.length) return;
+  return TimetableUtil.normalizeClassesFromAi(apiClasses || [], ref.getDay());
+}
+
+function detectOcrReviewIssues(classes) {
+  const issues = [];
+  const byIndex = {};
+  const add = (idx, level, text) => {
+    const issue = { idx, level, text };
+    issues.push(issue);
+    if (idx != null) {
+      if (!byIndex[idx]) byIndex[idx] = [];
+      byIndex[idx].push(issue);
+    }
+  };
+
+  if (!classes.length) {
+    add(null, 'bad', '수업을 하나도 인식하지 못했어요. 이미지가 잘렸거나 격자 경계가 흐릴 수 있어요.');
+    return { issues, byIndex };
+  }
+
+  if (classes.length <= 4) {
+    add(null, 'warn', `전체 수업이 ${classes.length}개만 잡혔어요. 누락된 수업이 있는지 확인해 주세요.`);
+  }
+
+  const counts = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
+  classes.forEach((c, idx) => {
+    counts[c.dow] = (counts[c.dow] || 0) + 1;
+    if (c.dow === 0 || c.dow === 6) {
+      add(idx, 'bad', `${TimetableUtil?.DOW_NAMES?.[c.dow] || '주말'}요일 수업으로 읽혔어요. 실제 수업인지 확인해 주세요.`);
+    }
+
+    const start = ocrClassMinutes(c.start);
+    const end = ocrClassMinutes(c.end);
+    if (start == null || end == null || end <= start) {
+      add(idx, 'bad', '시작/종료 시간이 이상해요.');
+    } else if (end - start >= 230) {
+      add(idx, 'warn', '4시간 이상 긴 블록으로 읽혔어요. 여러 수업이 합쳐졌는지 확인해 주세요.');
+    }
+
+    if (!String(c.room || '').trim()) {
+      add(idx, 'warn', '강의실이 비어 있어요.');
+    }
+
+    const inferred = TimetableUtil?.resolveRoomToBuildingKey?.(c.room, null);
+    if (inferred && c.buildingKey && inferred !== c.buildingKey) {
+      add(idx, 'warn', `${c.room} 기준 건물은 ${inferred} 쪽이에요. 현재 ${c.buildingKey}로 저장됩니다.`);
+    }
+  });
+
+  const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
+  const todayDow = ref.getDay();
+  const weekdayCounts = [1, 2, 3, 4, 5].map((d) => counts[d] || 0);
+  const activeWeekdays = weekdayCounts.filter(Boolean).length;
+  const maxDayCount = Math.max(...weekdayCounts);
+  if (classes.length >= 6 && activeWeekdays <= 2) {
+    add(null, 'warn', '수업이 1~2개 요일에 몰려 있어요. 요일 열이 한 칸 밀렸을 가능성이 있어요.');
+  }
+  if (todayDow >= 1 && todayDow <= 5 && classes.length >= 6 && (counts[todayDow] || 0) <= 1 && maxDayCount >= 3) {
+    add(null, 'warn', `오늘(${TimetableUtil?.DOW_NAMES?.[todayDow] || todayDow}) 수업이 너무 적게 잡혔어요. 오늘 열 누락 가능성이 있어요.`);
+  }
+
+  return { issues, byIndex };
+}
+
+function ensureOcrReviewStyles() {
+  if (document.getElementById('ocrReviewStyles')) return;
+  const style = document.createElement('style');
+  style.id = 'ocrReviewStyles';
+  style.textContent = `
+.ocr-review{display:none;margin-top:10px;border:1.5px solid #bfdbfe;background:#f8fbff;border-radius:14px;padding:12px}
+.ocr-review.on{display:block;animation:fu .25s ease}
+.ocr-r-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
+.ocr-r-title{font-size:13px;font-weight:800;color:var(--navy);line-height:1.35}
+.ocr-r-sub{font-size:11px;color:var(--muted);line-height:1.45;margin-top:3px}
+.ocr-r-badge{font-size:10px;font-weight:800;border-radius:20px;padding:4px 8px;white-space:nowrap}
+.ocr-r-badge.ok{background:#dcfce7;color:#166534}
+.ocr-r-badge.warn{background:#fef3c7;color:#92400e}
+.ocr-r-badge.bad{background:#fee2e2;color:#991b1b}
+.ocr-r-issues{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
+.ocr-r-issue{font-size:11px;line-height:1.45;border-radius:8px;padding:7px 9px;background:#fff;border:1px solid #e2e8f0;color:#475569}
+.ocr-r-issue.warn{border-color:#fcd34d;background:#fffbeb;color:#92400e}
+.ocr-r-issue.bad{border-color:#fecaca;background:#fff1f2;color:#991b1b}
+.ocr-r-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:10px}
+.ocr-r-btn{min-height:38px;border-radius:9px;border:1.5px solid var(--border);background:#fff;color:var(--navy);font-size:11.5px;font-weight:800;cursor:pointer;font-family:'Noto Sans KR',sans-serif}
+.ocr-r-btn.primary{background:var(--navy);border-color:var(--navy);color:#fff}
+.ocr-r-btn.danger{color:#991b1b;border-color:#fecaca}
+.ocr-r-list{display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto;padding-right:2px}
+.ocr-class{background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:10px}
+.ocr-class.flag{border-color:#fcd34d;background:#fffdf5}
+.ocr-class.bad{border-color:#fecaca;background:#fff7f7}
+.ocr-class-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}
+.ocr-class-name{font-size:12.5px;font-weight:800;color:var(--text);line-height:1.35}
+.ocr-class-tags{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:7px}
+.ocr-tag{font-size:9.5px;font-weight:800;border-radius:12px;padding:3px 6px;background:#eff6ff;color:#1d4ed8}
+.ocr-tag.warn{background:#fef3c7;color:#92400e}
+.ocr-tag.bad{background:#fee2e2;color:#991b1b}
+.ocr-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.ocr-field{display:flex;flex-direction:column;gap:3px}
+.ocr-field label{font-size:9.5px;font-weight:800;color:var(--muted)}
+.ocr-field input,.ocr-field select{width:100%;min-height:36px;border-radius:8px;border:1.5px solid var(--border);background:#f8fafc;color:var(--text);font-size:12px;font-family:'Noto Sans KR',sans-serif;padding:7px 8px;outline:none}
+.ocr-field input:focus,.ocr-field select:focus{border-color:var(--blue);background:#fff}
+.ocr-class-quick{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
+.ocr-mini{min-height:32px;border-radius:8px;border:1px solid #dbe4f0;background:#f8fafc;color:#475569;font-size:10.5px;font-weight:800;cursor:pointer;font-family:'Noto Sans KR',sans-serif}
+`;
+  document.head.appendChild(style);
+}
+
+function getOcrReviewBox() {
+  ensureOcrReviewStyles();
+  let box = document.getElementById('ocrReviewBox');
+  if (box) return box;
+  box = document.createElement('div');
+  box.id = 'ocrReviewBox';
+  box.className = 'ocr-review';
+  const imgMode = document.getElementById('imgMode');
+  if (imgMode) imgMode.appendChild(box);
+  return box;
+}
+
+function ocrTimeOptions(selected, endMode = false) {
+  const out = [];
+  const seen = new Set();
+  for (let h = 6; h <= 21; h++) {
+    const v = `${String(h).padStart(2, '0')}:${endMode ? '50' : '00'}`;
+    seen.add(v);
+    out.push(`<option value="${v}"${v === selected ? ' selected' : ''}>${v}</option>`);
+  }
+  if (selected && !seen.has(selected)) {
+    out.unshift(`<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)}</option>`);
+  }
+  return out.join('');
+}
+
+function ocrDowOptions(selected) {
+  return [1, 2, 3, 4, 5, 6, 0]
+    .map((d) => `<option value="${d}"${Number(selected) === d ? ' selected' : ''}>${TimetableUtil?.DOW_NAMES?.[d] || d}</option>`)
+    .join('');
+}
+
+function ocrBuildingOptions(selected) {
+  const buildings = TimetableUtil?.CAMPUS_BUILDINGS || [];
+  return buildings
+    .map((b) => `<option value="${escapeHtml(b.key)}"${b.key === selected ? ' selected' : ''}>${escapeHtml(b.label || b.key)}</option>`)
+    .join('');
+}
+
+function renderOcrReviewPanel() {
+  const box = getOcrReviewBox();
+  if (!box) return;
+  const classes = ocrReviewState.classes || [];
+  const detected = detectOcrReviewIssues(classes);
+  ocrReviewState.issues = detected.issues;
+  const badN = detected.issues.filter((i) => i.level === 'bad').length;
+  const warnN = detected.issues.filter((i) => i.level === 'warn').length;
+  const badgeCls = badN ? 'bad' : warnN ? 'warn' : 'ok';
+  const badgeText = badN ? `위험 ${badN}` : warnN ? `확인 ${warnN}` : '안정';
+  const title = classes.length
+    ? `일단 추천했어요 · 인식 수업 ${classes.length}개`
+    : '시간표 인식 확인 필요';
+  const sub = classes.length
+    ? badN || warnN
+      ? '추천은 먼저 했고, 저장 시간표는 확인 후 반영돼요. 의심 수업만 빠르게 고치면 즉시 다시 계산됩니다.'
+      : '큰 이상은 없어 바로 저장했어요. 필요하면 아래에서 세부 수업만 조정할 수 있어요.'
+    : '수업이 비어 있으면 이미지 또는 수동 입력으로 다시 시도해 주세요.';
+  const issueHtml = detected.issues.slice(0, 5)
+    .map((i) => `<div class="ocr-r-issue ${i.level}">${escapeHtml(i.text)}</div>`)
+    .join('');
+  const sorted = classes
+    .map((c, idx) => ({ c, idx }))
+    .sort((a, b) => Number(a.c.dow) - Number(b.c.dow) || ocrClassMinutes(a.c.start) - ocrClassMinutes(b.c.start));
+  const listHtml = sorted
+    .map(({ c, idx }) => {
+      const itemIssues = detected.byIndex[idx] || [];
+      const itemCls = itemIssues.some((i) => i.level === 'bad') ? 'bad' : itemIssues.length ? 'flag' : '';
+      const tags = [
+        `<span class="ocr-tag">${escapeHtml(TimetableUtil?.DOW_NAMES?.[c.dow] || c.dow)} ${escapeHtml(c.start)}~${escapeHtml(c.end)}</span>`,
+        `<span class="ocr-tag">${escapeHtml(c.room || '강의실 없음')}</span>`,
+        ...itemIssues.map((i) => `<span class="ocr-tag ${i.level}">${escapeHtml(i.text)}</span>`),
+      ].join('');
+      return `<div class="ocr-class ${itemCls}">
+        <div class="ocr-class-top">
+          <div class="ocr-class-name">${escapeHtml(c.name || '수업')}</div>
+          <button type="button" class="ocr-mini" onclick="deleteOcrReviewClass(${idx})">삭제</button>
+        </div>
+        <div class="ocr-class-tags">${tags}</div>
+        <div class="ocr-grid">
+          <div class="ocr-field"><label>요일</label><select onchange="updateOcrReviewClass(${idx}, 'dow', this.value)">${ocrDowOptions(c.dow)}</select></div>
+          <div class="ocr-field"><label>건물</label><select onchange="updateOcrReviewClass(${idx}, 'buildingKey', this.value)">${ocrBuildingOptions(c.buildingKey)}</select></div>
+          <div class="ocr-field"><label>시작</label><select onchange="updateOcrReviewClass(${idx}, 'start', this.value)">${ocrTimeOptions(c.start, false)}</select></div>
+          <div class="ocr-field"><label>종료</label><select onchange="updateOcrReviewClass(${idx}, 'end', this.value)">${ocrTimeOptions(c.end, true)}</select></div>
+          <div class="ocr-field"><label>과목</label><input value="${escapeHtml(c.name || '')}" onchange="updateOcrReviewClass(${idx}, 'name', this.value)"></div>
+          <div class="ocr-field"><label>강의실</label><input value="${escapeHtml(c.room || '')}" onchange="updateOcrReviewClass(${idx}, 'room', this.value)"></div>
+        </div>
+        <div class="ocr-class-quick">
+          <button type="button" class="ocr-mini" onclick="shiftOcrReviewDay(${idx}, -1)">전날</button>
+          <button type="button" class="ocr-mini" onclick="shiftOcrReviewDay(${idx}, 1)">다음날</button>
+          <button type="button" class="ocr-mini" onclick="shiftOcrReviewTime(${idx}, -60)">-1시간</button>
+          <button type="button" class="ocr-mini" onclick="shiftOcrReviewTime(${idx}, 60)">+1시간</button>
+        </div>
+      </div>`;
+    })
+    .join('');
+
+  box.innerHTML = `<div class="ocr-r-head">
+      <div><div class="ocr-r-title">${escapeHtml(title)}</div><div class="ocr-r-sub">${escapeHtml(sub)}</div></div>
+      <span class="ocr-r-badge ${badgeCls}">${escapeHtml(badgeText)}</span>
+    </div>
+    ${issueHtml ? `<div class="ocr-r-issues">${issueHtml}</div>` : ''}
+    <div class="ocr-r-actions">
+      <button type="button" class="ocr-r-btn primary" onclick="applyOcrReviewClasses()">수정 반영하고 다시 추천</button>
+      <button type="button" class="ocr-r-btn" onclick="addOcrReviewClass()">수업 추가</button>
+    </div>
+    <div class="ocr-r-list">${listHtml || '<div class="ocr-r-issue bad">인식된 수업이 없습니다.</div>'}</div>`;
+  box.classList.add('on');
+}
+
+function setOcrReviewState(api, appliedData = null) {
+  const classes = getOcrReviewClasses(api?.classes || []);
+  ocrReviewState = { classes, rawApi: api, appliedData, issues: [] };
+  ocrReviewState.issues = detectOcrReviewIssues(classes).issues;
+}
+
+function openOcrReviewPanel(api = null, appliedData = null) {
+  if (api) {
+    setOcrReviewState(api, appliedData);
+  } else if (appliedData) {
+    ocrReviewState.appliedData = appliedData;
+  }
+  renderOcrReviewPanel();
+  const detected = ocrReviewState.issues || [];
+  if (detected.length) {
+    showToast(`추천 완료 — 의심 수업 ${detected.length}개를 확인해 주세요`);
+  }
+}
+
+function focusOcrReviewPanel() {
+  setMd('img');
+  const box = document.getElementById('ocrReviewBox');
+  if (box?.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function openOcrReviewFromFood() {
+  const ttBtn = Array.from(document.querySelectorAll('.tb')).find((el) =>
+    String(el.getAttribute?.('onclick') || '').includes("'tt'"),
+  );
+  if (ttBtn) goTab('tt', ttBtn);
+  focusOcrReviewPanel();
+}
+
+function updateOcrReviewClass(idx, field, value) {
+  const c = ocrReviewState.classes?.[idx];
+  if (!c) return;
+  if (field === 'dow') c.dow = Number(value);
+  else c[field] = value;
+  if (field === 'room') {
+    const inferred = TimetableUtil?.resolveRoomToBuildingKey?.(value, null);
+    if (inferred) c.buildingKey = inferred;
+  }
+  renderOcrReviewPanel();
+}
+
+function shiftOcrReviewDay(idx, delta) {
+  const c = ocrReviewState.classes?.[idx];
+  if (!c) return;
+  let next = Number(c.dow) + delta;
+  if (next < 0) next = 6;
+  if (next > 6) next = 0;
+  c.dow = next;
+  renderOcrReviewPanel();
+}
+
+function shiftOcrReviewTime(idx, delta) {
+  const c = ocrReviewState.classes?.[idx];
+  if (!c) return;
+  const start = ocrClassMinutes(c.start);
+  const end = ocrClassMinutes(c.end);
+  if (start == null || end == null) return;
+  const ns = Math.max(6 * 60, Math.min(21 * 60, start + delta));
+  const ne = Math.max(6 * 60 + 50, Math.min(21 * 60 + 50, end + delta));
+  c.start = ocrMinutesToTime(ns, false);
+  c.end = ocrMinutesToTime(ne, true);
+  renderOcrReviewPanel();
+}
+
+function deleteOcrReviewClass(idx) {
+  if (!ocrReviewState.classes?.length) return;
+  ocrReviewState.classes.splice(idx, 1);
+  renderOcrReviewPanel();
+}
+
+function addOcrReviewClass() {
+  const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
+  const last = ocrReviewState.classes?.[ocrReviewState.classes.length - 1];
+  ocrReviewState.classes.push({
+    dow: last?.dow ?? (ref.getDay() || 1),
+    start: last?.end ? ocrMinutesToTime(Math.min((ocrClassMinutes(last.end) || 600) + 10, 21 * 60), false) : '10:00',
+    end: last?.end ? ocrMinutesToTime(Math.min((ocrClassMinutes(last.end) || 600) + 60, 21 * 60 + 50), true) : '10:50',
+    name: '수업',
+    room: '',
+    buildingKey: last?.buildingKey || '3공',
+  });
+  renderOcrReviewPanel();
+}
+
+async function applyOcrReviewClasses() {
+  if (typeof TimetableUtil === 'undefined') {
+    showToast('시간표 모듈을 불러오지 못했어요');
+    return;
+  }
+  const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
+  const normalized = TimetableUtil.normalizeClassesFromAi(ocrReviewState.classes || [], ref.getDay());
+  if (!normalized.length) {
+    showToast('저장할 수업이 없습니다');
+    return;
+  }
   TimetableUtil.replaceUserTimetable(normalized);
+  ocrReviewState.classes = normalized;
   updateSavedTimetableUi();
+  const snap = TimetableUtil.analyzeNow(normalized, ref);
+  await applyScheduleAnalysis(
+    { ...snap, gapSource: 'saved_timetable', warnings: ['사용자가 확인한 시간표 기준으로 다시 계산했어요.'] },
+    '확인한 시간표',
+    { skipLectureDbEnrich: true },
+  );
+  renderOcrReviewPanel();
 }
 
 function refineScheduleAnalysis(api = {}, lectureDb = null, options = {}) {
@@ -724,22 +1063,22 @@ function refineScheduleAnalysis(api = {}, lectureDb = null, options = {}) {
   const warnings = [...(api.warnings || [])];
   let classes = [];
   const db = lectureDb || (typeof TimetableUtil !== 'undefined' ? TimetableUtil.getLectureDbSync?.() : null);
-  const fromOcr = options.fromOcr || (Array.isArray(api.classes) && api.classes.length > 0);
+  const fromOcr = options.fromOcr || Array.isArray(api.classes);
 
   if (typeof TimetableUtil !== 'undefined') {
     const fromApi = TimetableUtil.normalizeClassesFromAi(api.classes || [], ref.getDay());
-    if (fromOcr && fromApi.length) {
+    if (fromOcr) {
       classes = fromApi;
     } else {
       classes = TimetableUtil.loadUserTimetable();
     }
 
-    if (db?.lectures?.length) {
+    if (db?.lectures?.length && !fromOcr && !options.skipLectureDbEnrich) {
       classes = TimetableUtil.enrichClassesWithLectureDb(classes, db, ref.getDay());
     }
     classes = TimetableUtil.dedupeOverlappingClasses(classes);
 
-    if (fromOcr && fromApi.length) {
+    if (fromOcr && fromApi.length && options.persistOcr !== false) {
       TimetableUtil.replaceUserTimetable(classes);
     }
 
@@ -885,16 +1224,20 @@ function fillManualFromTimetable() {
   showToast('수동 입력에 오늘 시간표를 채웠어요');
 }
 
-async function applyScheduleAnalysis(rawApi, sourceLabel = '분석') {
+async function applyScheduleAnalysis(rawApi, sourceLabel = '분석', options = {}) {
   await ensureMenus();
-  if (typeof TimetableUtil !== 'undefined' && TimetableUtil.loadLectureDb) {
+  const ocrUsed = /AI|이미지|OCR/i.test(sourceLabel);
+  if (!ocrUsed && !options.skipLectureDbEnrich && typeof TimetableUtil !== 'undefined' && TimetableUtil.loadLectureDb) {
     await TimetableUtil.loadLectureDb();
   }
   if (typeof TimetableUtil !== 'undefined' && TimetableUtil.loadClassPeriods) {
     await TimetableUtil.loadClassPeriods();
   }
-  const ocrUsed = /AI|이미지|OCR/i.test(sourceLabel);
-  const data = refineScheduleAnalysis(rawApi, null, { fromOcr: ocrUsed && rawApi.classes?.length });
+  const data = refineScheduleAnalysis(rawApi, null, {
+    fromOcr: ocrUsed && Array.isArray(rawApi.classes),
+    skipLectureDbEnrich: options.skipLectureDbEnrich,
+    persistOcr: options.persistOcr,
+  });
   if (data.scheduleMeta && ocrUsed) data.scheduleMeta.ocrUsed = true;
   let analyzeSource = 'timetable_classes';
   if (ocrUsed) analyzeSource = 'timetable_image';
@@ -1756,9 +2099,13 @@ function drawBoard() {
     }
   }
 
-  document.getElementById('tAlert').innerHTML = d.mealIntent?.willEat
+  const reviewIssueCount = meta.ocrUsed && ocrReviewState?.issues?.length ? ocrReviewState.issues.length : 0;
+  const reviewButton = reviewIssueCount
+    ? ` <button type="button" style="margin-left:auto;border:1px solid #f59e0b;background:#fff7ed;color:#92400e;border-radius:7px;padding:5px 8px;font-size:10.5px;font-weight:800;font-family:'Noto Sans KR',sans-serif;cursor:pointer" onclick="focusOcrReviewPanel()">의심 수업 ${reviewIssueCount}개 확인</button>`
+    : '';
+  document.getElementById('tAlert').innerHTML = (d.mealIntent?.willEat
     ? `⚠️ ${escapeHtml(d.오늘?.crowd?.설명 || '식사 파동')} · 동시 이동 <b>${escapeHtml(d.캠퍼스인원)}</b>`
-    : `ℹ️ 짧은 공강 — 학식 대신 간단히 해결하는 패턴`;
+    : `ℹ️ 짧은 공강 — 학식 대신 간단히 해결하는 패턴`) + reviewButton;
   document.getElementById('schBd').classList.add('on');
   document.getElementById('aiBox').classList.add('on');
   document.getElementById('aiTxt').innerHTML = '';
@@ -1981,7 +2328,18 @@ function drawFood() {
     dayMode === 'today' && gapMin < 45
       ? '<div class="gap-short-banner">⚠️ 공강이 짧아요! 빠른 식당을 우선 추천해요</div>'
       : '';
-  wrap.innerHTML = shortGapBanner;
+  const foodOcrIssueCount =
+    dayMode === 'today' && lastData.scheduleMeta?.ocrUsed && ocrReviewState?.issues?.length
+      ? ocrReviewState.issues.length
+      : 0;
+  const foodOcrBanner = foodOcrIssueCount
+    ? `<div class="food-pred-banner food-pred-banner--warn">
+        <span class="food-pred-ico">⚠️</span>
+        <div style="flex:1">시간표 ${foodOcrIssueCount}곳 확인 필요 · 추천은 먼저 계산했어요.</div>
+        <button type="button" style="border:1px solid #fdba74;background:#fff;color:#9a3412;border-radius:8px;padding:6px 9px;font-size:11px;font-weight:800;font-family:'Noto Sans KR',sans-serif;cursor:pointer" onclick="openOcrReviewFromFood()">확인</button>
+      </div>`
+    : '';
+  wrap.innerHTML = foodOcrBanner + shortGapBanner;
 
   ordered.forEach((row, idx) => {
     const { key, e, n, st, menus, walk, back, wait, total, margin, cardState, hoursText, tier, infeasible } = row;
@@ -2748,8 +3106,19 @@ async function doAnalyzeImg() {
       throw new Error(data.error || '분석 실패');
     }
 
-    persistOcrClasses(data.classes);
-    await applyScheduleAnalysis(data, 'AI 시간표');
+    const reviewClasses = getOcrReviewClasses(data.classes);
+    const reviewIssues = detectOcrReviewIssues(reviewClasses).issues;
+    const reviewWarnings = reviewIssues
+      .slice(0, 3)
+      .map((i) => `OCR 확인: ${i.text}`);
+    const reviewedData = reviewWarnings.length
+      ? { ...data, warnings: [...(data.warnings || []), ...reviewWarnings] }
+      : data;
+    setOcrReviewState(reviewedData);
+    const applied = await applyScheduleAnalysis(reviewedData, 'AI 시간표', {
+      persistOcr: reviewIssues.length === 0,
+    });
+    openOcrReviewPanel(null, applied);
   } catch (err) {
     stopLd();
     document.getElementById('ldg').classList.remove('on');

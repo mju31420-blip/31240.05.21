@@ -108,7 +108,26 @@ function inferPeriodCountFromEndRow(startMin, endMin, daytime) {
   return null;
 }
 
-/** 명지대 주간 교시표 기준 — 09~17시 정시 시작, :50 종료, 1~3교시 연속 */
+function normalizeEveningHourBlock(startMin, endMin, durations) {
+  let st = startMin;
+  let en = endMin;
+  if (st >= 6 * 60 && st < 9 * 60 && en <= 9 * 60 + 50) {
+    st += 12 * 60;
+    en += 12 * 60;
+  }
+  if (st < 18 * 60 || st > 21 * 60) return null;
+
+  const normalizedStart = st % 60 === 0 ? st : Math.floor(st / 60) * 60;
+  const endHour = Math.floor(en / 60);
+  const normalizedEnd = en % 60 === 50 ? en : endHour * 60 + 50;
+  if (normalizedEnd <= normalizedStart) return null;
+
+  const duration = normalizedEnd - normalizedStart;
+  if (!durations.includes(duration)) return null;
+  return { start: minToTime(normalizedStart), end: minToTime(normalizedEnd) };
+}
+
+/** 명지대 교시표 기준 — 주간 09~17시 + 저녁 18시대 블록, :50 종료 */
 export function normalizeEverytimeClassTimes(start, end, config = loadClassPeriods()) {
   const daytime = getDaytimePeriods(config);
   const durations = config?.consecutiveSpan?.durationsMin || VALID_DURATIONS;
@@ -117,6 +136,9 @@ export function normalizeEverytimeClassTimes(start, end, config = loadClassPerio
   const st = timeToMin(start);
   let en = timeToMin(end);
   if (st == null || en == null || en <= st) return null;
+
+  const eveningBlock = normalizeEveningHourBlock(st, en, durations);
+  if (eveningBlock) return eveningBlock;
 
   const startMinPart = st % 60;
   const normalizedStart = startMinPart === 0 ? st : Math.floor(st / 60) * 60;

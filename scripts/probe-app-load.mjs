@@ -7,7 +7,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dir = path.join(__dirname, '../public/');
 const order = ['utils.js', 'kst.js', 'schoolCalendar.js', 'campusDistance.js', 'timetable.js', 'mealEngine.js', 'app.js'];
 
-const el = { textContent: '로딩중...', style: {}, classList: { add() {}, remove() {}, toggle() {} }, appendChild() {} };
+function fakeEl() {
+  return {
+    textContent: '로딩중...',
+    innerHTML: '',
+    style: {},
+    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+    appendChild() {},
+    addEventListener() {},
+    querySelector: () => fakeEl(),
+    querySelectorAll: () => [],
+    insertAdjacentHTML() {},
+  };
+}
+
+const el = fakeEl();
 const ctx = {
   window: {},
   document: {
@@ -15,7 +29,7 @@ const ctx = {
     querySelector: () => null,
     querySelectorAll: () => [],
     documentElement: { classList: { add() {}, remove() {} } },
-    createElement: () => ({ style: {}, classList: { add() {}, remove() {} }, appendChild() {} }),
+    createElement: () => fakeEl(),
     addEventListener() {},
   },
   localStorage: { getItem: () => null, setItem() {} },
@@ -23,10 +37,13 @@ const ctx = {
   console,
   setTimeout() {},
   setInterval() {},
-  fetch: async () => ({
+  addEventListener() {},
+  fetch: async (url = '') => ({
     ok: true,
     headers: { get: () => 'application/json' },
-    json: async () => ({ ok: true, MENUS: {} }),
+    json: async () => String(url).includes('open-meteo')
+      ? ({ current: { temperature_2m: 20, weathercode: 0 } })
+      : ({ ok: true, MENUS: { 기숙사: { 1: { l: ['local-menu'] } } } }),
   }),
   location: { search: '' },
   navigator: { serviceWorker: { addEventListener() {} } },

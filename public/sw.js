@@ -4,7 +4,7 @@
  * - HTML/JS: 네트워크 우선 (배포 후에도 예전 app.js가 안 남게)
  * - API: 캐시 안 함
  */
-const SW_VERSION = 'mb-pwa-10';
+const SW_VERSION = 'mb-pwa-11';
 const STATIC_CACHE = `static-${SW_VERSION}`;
 const SHELL_CACHE = `shell-${SW_VERSION}`;
 

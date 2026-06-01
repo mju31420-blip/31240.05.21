@@ -13,7 +13,7 @@
 
   window.addEventListener('load', () => {
     navigator.serviceWorker
-      .register('/sw.js?v=20260524-pwa10', { scope: '/' })
+      .register('/sw.js?v=20260601-pwa11', { scope: '/' })
       .then((reg) => {
         reg.addEventListener('updatefound', () => {
           const next = reg.installing;

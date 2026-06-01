@@ -6,13 +6,29 @@ import { BUILDING_KEYS } from '../config.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const ROOM_PREFIX_MAP = [
-  ['Y19', '3공'],
+  ['Y86', '2공'],
+  ['Y85', '2공'],
+  ['Y83', '2공'],
+  ['Y81', '2공'],
+  ['Y71', '체육관'],
+  ['Y64', '체육문화관'],
+  ['Y63', '체육문화관'],
+  ['Y62', '체육문화관'],
+  ['Y61', '체육문화관'],
+  ['Y27', '창조'],
+  ['Y25', '창조'],
+  ['Y24', '하이브리드구조실험센터'],
+  ['Y23', '차세대과학관'],
   ['Y22', '채플'],
   ['Y21', '학생'],
-  ['Y25', '창조'],
-  ['Y7', '자연'],
-  ['Y11', '공2'],
+  ['Y20', '건축도시설계원'],
+  ['Y19', '3공'],
+  ['Y17', '산업협력관'],
+  ['Y13', '제4공학관'],
+  ['Y12', '디자인조형센터'],
+  ['Y11', '학군단'],
   ['Y9', '자연'],
+  ['Y7', '자연'],
   ['Y5', '5공'],
   ['Y3', '명진당'],
   ['Y1', '1공'],
@@ -23,11 +39,10 @@ let lectureDbCache = null;
 export function resolveBuildingKey(text) {
   if (!text || text === '없음' || String(text).includes('하교')) return null;
   const t = String(text);
+  const roomKey = resolveRoomToBuildingKey(t, null);
+  if (roomKey) return roomKey;
   for (const [key, aliases] of Object.entries(BUILDING_KEYS)) {
     if (aliases.some((a) => t.includes(a))) return key;
-  }
-  for (const [prefix, key] of ROOM_PREFIX_MAP) {
-    if (t.toUpperCase().includes(prefix)) return key;
   }
   return null;
 }
