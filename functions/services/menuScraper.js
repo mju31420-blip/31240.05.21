@@ -7,6 +7,7 @@ const MEAL_SLOT = { 중식: 'l', 점심: 'l', 조식: 'b', 석식: 'd', 저녁: 
 const SIDE_WORDS = new Set([
   '백미밥', '쌀밥', '잡곡밥', '추가밥', '배추김치', '깍두기', '단무지', '요구르트',
   '샐러드', '드레싱', '냉매실차', '오미자차', '홍차', '팩주스', '도시락김', '후리가케밥',
+  '인기', '메뉴', '추천',
 ]);
 
 const TAG_RULES = [
@@ -48,6 +49,7 @@ function parseMenuItems(content) {
   const parts = cleaned.split(/\s+/).filter(Boolean);
   const items = [];
   for (const part of parts) {
+    if (part.startsWith('[')) continue;
     if (SIDE_WORDS.has(part)) continue;
     if (/^배추김치|^깍두기/.test(part)) continue;
     if (part.length < 2) continue;
