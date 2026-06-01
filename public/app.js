@@ -834,6 +834,11 @@ function ensureOcrReviewStyles() {
 .ocr-field input:focus,.ocr-field select:focus{border-color:var(--blue);background:#fff}
 .ocr-class-quick{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
 .ocr-mini{min-height:32px;border-radius:8px;border:1px solid #dbe4f0;background:#f8fafc;color:#475569;font-size:10.5px;font-weight:800;cursor:pointer;font-family:'Noto Sans KR',sans-serif}
+.ocr-daytabs{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:10px}
+.ocr-daytab{min-height:36px;border-radius:9px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:12px;font-weight:800;cursor:pointer;font-family:'Noto Sans KR',sans-serif;transition:.15s}
+.ocr-daytab.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.ocr-daytab.empty{color:#cbd5e1;background:#f8fafc;cursor:not-allowed;opacity:.7}
+.ocr-daytab:not(.empty):not(.on):hover{border-color:var(--blue);color:var(--blue)}
 .acp-overlay{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(7,23,48,.45);padding:20px;animation:fu .18s ease}
 .acp-box{width:100%;max-width:340px;background:#fff;border-radius:16px;border:1.5px solid var(--border);box-shadow:0 18px 48px rgba(7,23,48,.28);padding:16px;max-height:90vh;overflow:auto}
 .acp-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
@@ -910,9 +915,26 @@ function renderOcrReviewPanel() {
   const issueHtml = detected.issues.slice(0, 5)
     .map((i) => `<div class="ocr-r-issue ${i.level}">${escapeHtml(i.text)}</div>`)
     .join('');
+  const dowCounts = {};
+  classes.forEach((c) => { dowCounts[c.dow] = (dowCounts[c.dow] || 0) + 1; });
+  let selectedDow = ocrReviewState.selectedDow;
+  if (selectedDow == null || !dowCounts[selectedDow]) {
+    const firstDowWithClass = [1, 2, 3, 4, 5, 6, 0].find((d) => dowCounts[d]);
+    selectedDow = firstDowWithClass != null ? firstDowWithClass : 1;
+    ocrReviewState.selectedDow = selectedDow;
+  }
+  const dayTabsHtml = [1, 2, 3, 4, 5]
+    .map((d) => {
+      const has = !!dowCounts[d];
+      const cls = `ocr-daytab${Number(selectedDow) === d ? ' on' : ''}${has ? '' : ' empty'}`;
+      const attr = has ? ` onclick="ocrReviewState.selectedDow=${d};renderOcrReviewPanel()"` : ' disabled';
+      return `<button type="button" class="${cls}"${attr}>${escapeHtml(TimetableUtil?.DOW_NAMES?.[d] || d)}</button>`;
+    })
+    .join('');
   const sorted = classes
     .map((c, idx) => ({ c, idx }))
-    .sort((a, b) => Number(a.c.dow) - Number(b.c.dow) || ocrClassMinutes(a.c.start) - ocrClassMinutes(b.c.start));
+    .filter(({ c }) => Number(c.dow) === Number(selectedDow))
+    .sort((a, b) => ocrClassMinutes(a.c.start) - ocrClassMinutes(b.c.start));
   const listHtml = sorted
     .map(({ c, idx }) => {
       const itemIssues = detected.byIndex[idx] || [];
@@ -953,8 +975,9 @@ function renderOcrReviewPanel() {
     ${issueHtml ? `<div class="ocr-r-issues">${issueHtml}</div>` : ''}
     <div class="ocr-r-actions">
       <button type="button" class="ocr-r-btn primary" onclick="applyOcrReviewClasses()">수정 반영하고 다시 추천</button>
-      <button type="button" class="ocr-r-btn" onclick="openAddClassPopup()">수업 추가</button>
+      <button type="button" class="ocr-r-btn" onclick="openAddClassPopup(ocrReviewState.selectedDow)">수업 추가</button>
     </div>
+    <div class="ocr-daytabs">${dayTabsHtml}</div>
     <div class="ocr-r-list">${listHtml || '<div class="ocr-r-issue bad">인식된 수업이 없습니다.</div>'}</div>`;
   box.classList.add('on');
 }
@@ -976,7 +999,8 @@ function setOcrReviewState(api, appliedData = null) {
       if (twin.buildingKey) c.buildingKey = twin.buildingKey;
     }
   }
-  ocrReviewState = { classes, rawApi: api, appliedData, issues: [] };
+  const firstDowWithClass = [1, 2, 3, 4, 5, 6, 0].find((d) => classes.some((c) => Number(c.dow) === d));
+  ocrReviewState = { classes, rawApi: api, appliedData, issues: [], selectedDow: firstDowWithClass != null ? firstDowWithClass : 1 };
   ocrReviewState.issues = detectOcrReviewIssues(classes).issues;
 }
 
@@ -1070,12 +1094,12 @@ function addOcrReviewClass() {
   renderOcrReviewPanel();
 }
 
-function openAddClassPopup() {
+function openAddClassPopup(dow) {
   ensureOcrReviewStyles();
   document.getElementById('addClassPopup')?.remove();
 
   const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
-  const defDow = ref.getDay() || 1;
+  const defDow = (dow != null && dow !== '') ? Number(dow) : (ref.getDay() || 1);
 
   const overlay = document.createElement('div');
   overlay.id = 'addClassPopup';
