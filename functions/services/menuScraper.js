@@ -50,6 +50,7 @@ function parseMenuItems(content) {
   const items = [];
   for (const part of parts) {
     if (part.startsWith('[')) continue;
+    if (part.endsWith(']')) continue;
     if (SIDE_WORDS.has(part)) continue;
     if (/^배추김치|^깍두기/.test(part)) continue;
     if (part.length < 2) continue;

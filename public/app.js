@@ -834,6 +834,18 @@ function ensureOcrReviewStyles() {
 .ocr-field input:focus,.ocr-field select:focus{border-color:var(--blue);background:#fff}
 .ocr-class-quick{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
 .ocr-mini{min-height:32px;border-radius:8px;border:1px solid #dbe4f0;background:#f8fafc;color:#475569;font-size:10.5px;font-weight:800;cursor:pointer;font-family:'Noto Sans KR',sans-serif}
+.acp-overlay{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(7,23,48,.45);padding:20px;animation:fu .18s ease}
+.acp-box{width:100%;max-width:340px;background:#fff;border-radius:16px;border:1.5px solid var(--border);box-shadow:0 18px 48px rgba(7,23,48,.28);padding:16px;max-height:90vh;overflow:auto}
+.acp-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.acp-title{font-size:14px;font-weight:800;color:var(--navy)}
+.acp-x{width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:#f8fafc;color:var(--muted);font-size:13px;font-weight:800;cursor:pointer;font-family:'Noto Sans KR',sans-serif}
+.acp-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
+.acp-field{display:flex;flex-direction:column;gap:4px}
+.acp-field.acp-full{grid-column:1 / -1}
+.acp-field label{font-size:10px;font-weight:800;color:var(--muted)}
+.acp-field input,.acp-field select{width:100%;min-height:40px;border-radius:9px;border:1.5px solid var(--border);background:#f8fafc;color:var(--text);font-size:13px;font-family:'Noto Sans KR',sans-serif;padding:8px 9px;outline:none}
+.acp-field input:focus,.acp-field select:focus{border-color:var(--blue);background:#fff}
+.acp-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 `;
   document.head.appendChild(style);
 }
@@ -941,7 +953,7 @@ function renderOcrReviewPanel() {
     ${issueHtml ? `<div class="ocr-r-issues">${issueHtml}</div>` : ''}
     <div class="ocr-r-actions">
       <button type="button" class="ocr-r-btn primary" onclick="applyOcrReviewClasses()">수정 반영하고 다시 추천</button>
-      <button type="button" class="ocr-r-btn" onclick="addOcrReviewClass()">수업 추가</button>
+      <button type="button" class="ocr-r-btn" onclick="openAddClassPopup()">수업 추가</button>
     </div>
     <div class="ocr-r-list">${listHtml || '<div class="ocr-r-issue bad">인식된 수업이 없습니다.</div>'}</div>`;
   box.classList.add('on');
@@ -1024,15 +1036,94 @@ function deleteOcrReviewClass(idx) {
 function addOcrReviewClass() {
   const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
   const last = ocrReviewState.classes?.[ocrReviewState.classes.length - 1];
-  ocrReviewState.classes.push({
+  const newClass = {
     dow: last?.dow ?? (ref.getDay() || 1),
     start: last?.end ? ocrMinutesToTime(Math.min((ocrClassMinutes(last.end) || 600) + 10, 21 * 60), false) : '10:00',
     end: last?.end ? ocrMinutesToTime(Math.min((ocrClassMinutes(last.end) || 600) + 60, 21 * 60 + 50), true) : '10:50',
     name: '수업',
     room: '',
     buildingKey: last?.buildingKey || '3공',
-  });
+  };
+  const twin = (ocrReviewState.classes || []).find(
+    (c) => String(c.name || '').trim() === String(newClass.name).trim() && String(c.room || '').trim()
+  );
+  if (twin) {
+    newClass.room = twin.room;
+    newClass.buildingKey = twin.buildingKey || newClass.buildingKey;
+  }
+  ocrReviewState.classes.push(newClass);
   renderOcrReviewPanel();
+}
+
+function openAddClassPopup() {
+  ensureOcrReviewStyles();
+  document.getElementById('addClassPopup')?.remove();
+
+  const ref = typeof KST !== 'undefined' ? KST.now() : new Date();
+  const defDow = ref.getDay() || 1;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'addClassPopup';
+  overlay.className = 'acp-overlay';
+  overlay.innerHTML = `
+    <div class="acp-box" role="dialog" aria-modal="true" aria-label="수업 추가">
+      <div class="acp-head">
+        <div class="acp-title">수업 추가</div>
+        <button type="button" class="acp-x" id="acpClose" aria-label="닫기">✕</button>
+      </div>
+      <div class="acp-grid">
+        <div class="acp-field"><label>요일</label><select id="acpDow">${ocrDowOptions(defDow)}</select></div>
+        <div class="acp-field"><label>과목명</label><input id="acpName" type="text" placeholder="예: 운영체제" autocomplete="off"></div>
+        <div class="acp-field"><label>시작</label><select id="acpStart">${ocrTimeOptions('10:00', false)}</select></div>
+        <div class="acp-field"><label>종료</label><select id="acpEnd">${ocrTimeOptions('10:50', true)}</select></div>
+        <div class="acp-field acp-full"><label>강의실</label><input id="acpRoom" type="text" placeholder="예: Y19301" autocomplete="off"></div>
+      </div>
+      <div class="acp-actions">
+        <button type="button" class="ocr-r-btn" id="acpCancel">취소</button>
+        <button type="button" class="ocr-r-btn primary" id="acpSave">저장</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const nameInput = overlay.querySelector('#acpName');
+  const roomInput = overlay.querySelector('#acpRoom');
+
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  function close() {
+    document.removeEventListener('keydown', onKey);
+    overlay.remove();
+  }
+  document.addEventListener('keydown', onKey);
+  overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector('#acpClose').addEventListener('click', close);
+  overlay.querySelector('#acpCancel').addEventListener('click', close);
+
+  nameInput.addEventListener('input', () => {
+    const name = nameInput.value.trim();
+    if (!name) return;
+    const twin = (ocrReviewState.classes || []).find(
+      (c) => String(c.name || '').trim() === name && String(c.room || '').trim()
+    );
+    if (twin) roomInput.value = twin.room;
+  });
+
+  overlay.querySelector('#acpSave').addEventListener('click', () => {
+    const dow = Number(overlay.querySelector('#acpDow').value);
+    const start = overlay.querySelector('#acpStart').value;
+    const end = overlay.querySelector('#acpEnd').value;
+    const name = nameInput.value.trim() || '수업';
+    const room = roomInput.value.trim();
+    const twin = (ocrReviewState.classes || []).find((c) => String(c.name || '').trim() === name);
+    const buildingKey =
+      (twin && twin.buildingKey) ||
+      TimetableUtil?.resolveRoomToBuildingKey?.(room, null) ||
+      '3공';
+    ocrReviewState.classes.push({ dow, start, end, name, room, buildingKey });
+    renderOcrReviewPanel();
+    close();
+  });
+
+  setTimeout(() => nameInput.focus(), 30);
 }
 
 async function applyOcrReviewClasses() {
