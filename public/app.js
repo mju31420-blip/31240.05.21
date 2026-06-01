@@ -961,6 +961,21 @@ function renderOcrReviewPanel() {
 
 function setOcrReviewState(api, appliedData = null) {
   const classes = getOcrReviewClasses(api?.classes || []);
+  const roomByName = new Map();
+  for (const c of classes) {
+    const name = String(c.name || '').trim();
+    if (name && String(c.room || '').trim() && !roomByName.has(name)) {
+      roomByName.set(name, { room: c.room, buildingKey: c.buildingKey });
+    }
+  }
+  for (const c of classes) {
+    if (String(c.room || '').trim()) continue;
+    const twin = roomByName.get(String(c.name || '').trim());
+    if (twin) {
+      c.room = twin.room;
+      if (twin.buildingKey) c.buildingKey = twin.buildingKey;
+    }
+  }
   ocrReviewState = { classes, rawApi: api, appliedData, issues: [] };
   ocrReviewState.issues = detectOcrReviewIssues(classes).issues;
 }
