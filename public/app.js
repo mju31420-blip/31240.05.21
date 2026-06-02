@@ -572,7 +572,7 @@ async function fetchWeather() {
 }
 fetchWeather();
 setInterval(fetchWeather, 30 * 60 * 1000);
-if (typeof SchoolCalendar !== 'undefined') SchoolCalendar.load();
+if (typeof SchoolCalendar !== 'undefined') SchoolCalendar.load().then(() => drawFood && drawFood());
 
 /* ════════════════════════════ TABS ════ */
 function goTab(id, btn) {
