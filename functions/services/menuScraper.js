@@ -52,13 +52,16 @@ function parseMenuItems(content) {
   for (const part of parts) {
     if (part.startsWith('[')) continue;
     if (part.endsWith(']')) continue;
-    if (SIDE_WORDS.has(part)) continue;
+    if (SIDE_WORDS.has(part) || ['중식', '양식', '일식', '한식', '석식', '조식', '특식', '분식'].some((w) => part.includes(w))) continue;
     if (/^배추김치|^깍두기/.test(part)) continue;
     if (part.length < 2) continue;
     items.push({ n: part, t: detectTag(part), k: 0 });
     if (items.length >= 4) break;
   }
-  if (!items.length) items.push({ n: cleaned.slice(0, 36), t: '없음', k: 0 });
+  if (!items.length) {
+    if (cleaned.startsWith('[') || cleaned.endsWith(']') || [...SIDE_WORDS].some((w) => cleaned.includes(w))) return [];
+    items.push({ n: cleaned.slice(0, 36), t: '없음', k: 0 });
+  }
   return items;
 }
 
