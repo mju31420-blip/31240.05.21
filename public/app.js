@@ -2435,12 +2435,12 @@ function drawFood() {
     const cardInfo = getRestaurantCardState(def.key, mealMode, nowRef, dayMode);
     let cardState = cardInfo.state;
     if (dayMode === 'tomorrow') {
-      if (base.상태 === 'closed') cardState = 'closed';
-      else if (base.상태 !== 'closed' && cardState === 'closed') {
+      if (base.상태 !== 'closed' && cardState === 'closed') {
         const tRef = new Date(nowRef.getTime());
         tRef.setDate(tRef.getDate() + 1);
         if (isOpen(def.key, mealMode, mealOpenRef(tRef, mealMode))) cardState = 'tomorrow';
       }
+      if (base.상태 === 'closed') cardState = 'closed';
     }
     const isClosed = cardState === 'closed';
     const showMenus = !isClosed;
