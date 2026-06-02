@@ -615,7 +615,12 @@ function setDay(m) {
   dayMode = m;
   document.getElementById('btnToday').classList.toggle('on', m === 'today');
   document.getElementById('btnTmrw').classList.toggle('on', m === 'tomorrow');
-  if (lastData) drawFood();
+  if (lastData) {
+    if (m === 'tomorrow') {
+      lastData.내일 = buildTomorrow(lastData.현재건물키, lastData.mealIntent?.period || mealMode || 'lunch');
+    }
+    drawFood();
+  }
   drawShuttle();
 }
 function setMeal(m) {
