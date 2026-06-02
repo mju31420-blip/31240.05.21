@@ -286,12 +286,14 @@ function normalizeMenusPayload(raw) {
   const out = {};
 
   function normalizeDaySlots(slots) {
-    return {
+    const out = {
       l: Array.isArray(slots?.l) ? slots.l : [],
       d: Array.isArray(slots?.d) ? slots.d : [],
       b: Array.isArray(slots?.b) ? slots.b : [],
       dow: typeof slots?.dow === 'number' ? slots.dow : undefined,
     };
+    if (slots?.closed === true) out.closed = true;
+    return out;
   }
 
   function normalizeDays(restaurantSrc) {
@@ -353,6 +355,14 @@ function getNearestDateKeyData(restaurantDays, ref) {
     }
   }
   return best;
+}
+
+function isMenuDateClosed(key, refOrOffset = 1) {
+  const restaurantDays = MENUS[key];
+  if (!restaurantDays) return false;
+  const ref = refOrOffset instanceof Date ? refOrOffset : menuRefDate(Number(refOrOffset) || 0);
+  const dateKey = menuDateKey(ref);
+  return restaurantDays[dateKey]?.closed === true;
 }
 
 function getMenuDayData(restaurantDays, refOrOffset = 0) {
@@ -615,13 +625,26 @@ function setDay(m) {
   dayMode = m;
   document.getElementById('btnToday').classList.toggle('on', m === 'today');
   document.getElementById('btnTmrw').classList.toggle('on', m === 'tomorrow');
-  if (lastData) {
-    if (m === 'tomorrow') {
-      lastData.내일 = buildTomorrow(lastData.현재건물키, lastData.mealIntent?.period || mealMode || 'lunch');
-    }
-    drawFood();
+  const finishShuttle = () => drawShuttle();
+  if (!lastData) {
+    finishShuttle();
+    return;
   }
-  drawShuttle();
+  if (m === 'tomorrow') {
+    const rebuildTomorrow = () => {
+      lastData.내일 = buildTomorrow(
+        lastData.현재건물키,
+        lastData.mealIntent?.period || mealMode || 'lunch',
+      );
+      drawFood();
+      finishShuttle();
+    };
+    if (typeof SchoolCalendar !== 'undefined') SchoolCalendar.load().then(rebuildTomorrow);
+    else rebuildTomorrow();
+    return;
+  }
+  drawFood();
+  finishShuttle();
 }
 function setMeal(m) {
   mealMode = m;
@@ -1507,13 +1530,13 @@ function getRestaurantCardState(key, period, refDate, dayMode) {
   if (dayMode === 'tomorrow') {
     const tomorrowRef = new Date(ref.getTime());
     tomorrowRef.setDate(tomorrowRef.getDate() + 1);
-    if (isNoSchoolDay(tomorrowRef)) return { state: 'closed' };
     const twDow = tomorrowRef.getDay();
     if (!getMealWindow(key, period, twDow)) return { state: 'closed' };
+    if (!isOpen(key, period, mealOpenRef(tomorrowRef, period))) return { state: 'closed' };
     return { state: 'tomorrow', ref: tomorrowRef, dow: twDow };
   }
 
-  if (isNoSchoolDay(ref)) return { state: 'closed' };
+  if (isNoSchoolDay(ref) && key === '기숙사') return { state: 'closed' };
 
   const dow = ref.getDay();
   const window = getMealWindow(key, period, dow);
@@ -1576,7 +1599,9 @@ function mealOpenRef(baseRef, mealPeriod) {
 
 function isOpen(key, period, refDate) {
   const ref = refDate || (typeof KST !== 'undefined' ? KST.now() : new Date());
-  if (typeof SchoolCalendar !== 'undefined' && SchoolCalendar.isNoSchoolDay(ref)) return false;
+  if (typeof SchoolCalendar !== 'undefined' && SchoolCalendar.isNoSchoolDay(ref) && key === '기숙사') {
+    return false;
+  }
   const dow = ref.getDay();
   if (dow === 0 || dow === 6) return false;
   const t = kstTimeFloat(ref);
@@ -2158,21 +2183,41 @@ function buildTomorrow(cur, period) {
     const walkMin = walkFn(key);
     const tomorrowRef = typeof KST !== 'undefined' ? KST.now() : new Date();
     tomorrowRef.setDate(tomorrowRef.getDate() + 1);
-    if (tomorrowDay === 0 || tomorrowDay === 6 || isNoSchoolDay(tomorrowRef)) {
+    if (tomorrowDay === 0 || tomorrowDay === 6) {
       식당[key] = {
         상태: 'closed',
-        배지: isNoSchoolDay(tomorrowRef) && typeof SchoolCalendar !== 'undefined' && SchoolCalendar.isHoliday(tomorrowRef)
-          ? '공휴일 미운영'
-          : '주말 미운영',
+        배지: '주말 미운영',
         메뉴: [],
         혼잡도: 0,
         추천여부: false,
       };
       return;
     }
+    if (isMenuDateClosed(key, tomorrowRef)) {
+      식당[key] = {
+        상태: 'closed',
+        배지: '휴무',
+        도보분: walkMin,
+        대기분: 0,
+        혼잡도: 0,
+        추천여부: false,
+        메뉴: [],
+      };
+      return;
+    }
     const openRef = mealOpenRef(tomorrowRef, period);
     if (!isOpen(key, period, openRef)) {
-      식당[key] = { 상태: 'closed', 배지: '운영 종료', 도보분: walkMin, 대기분: 0, 혼잡도: 0, 추천여부: false, 메뉴: [] };
+      const isHoliday =
+        typeof SchoolCalendar !== 'undefined' && SchoolCalendar.isHoliday && SchoolCalendar.isHoliday(tomorrowRef);
+      식당[key] = {
+        상태: 'closed',
+        배지: isHoliday && key === '기숙사' ? '공휴일 미운영' : '운영 종료',
+        도보분: walkMin,
+        대기분: 0,
+        혼잡도: 0,
+        추천여부: false,
+        메뉴: [],
+      };
       return;
     }
     const cong = getDynamicCrowd(key, openRef);
@@ -2381,7 +2426,6 @@ function drawFood() {
   const menuDayOff = dayMode === 'tomorrow' ? 1 : 0;
   const menuRef = typeof KST !== 'undefined' ? KST.now() : new Date();
   menuRef.setDate(menuRef.getDate() + menuDayOff);
-  const menuOffDay = isNoSchoolDay(menuRef);
 
   const nowRef = typeof KST !== 'undefined' ? KST.now() : new Date();
   const fromKey = lastData.현재건물키 || '3공';
@@ -2389,9 +2433,17 @@ function drawFood() {
   const scored = DEFS.map((def) => {
     const base = src.식당[def.key] || {};
     const cardInfo = getRestaurantCardState(def.key, mealMode, nowRef, dayMode);
-    const cardState = cardInfo.state;
+    let cardState = cardInfo.state;
+    if (dayMode === 'tomorrow') {
+      if (base.상태 === 'closed') cardState = 'closed';
+      else if (base.상태 !== 'closed' && cardState === 'closed') {
+        const tRef = new Date(nowRef.getTime());
+        tRef.setDate(tRef.getDate() + 1);
+        if (isOpen(def.key, mealMode, mealOpenRef(tRef, mealMode))) cardState = 'tomorrow';
+      }
+    }
     const isClosed = cardState === 'closed';
-    const showMenus = !isClosed && !menuOffDay;
+    const showMenus = !isClosed;
     const menus = showMenus ? getMenus(def.key, mealMode, menuDayOff) : [];
     const walk = base.도보분 ?? CampusDistance.walkToRest(fromKey, def.key);
     const back = base.복귀분 ?? CampusDistance.walkRestToBuilding(def.key, nextKey);

@@ -80,6 +80,11 @@ function parseTableRows($) {
     if (dateInfo) {
       currentDow = dateInfo.dow;
       currentDateKey = dateInfo.dateKey;
+      if (!days[currentDateKey]) {
+        days[currentDateKey] = { l: [], d: [], b: [], dow: currentDow };
+      } else {
+        days[currentDateKey].dow = currentDow;
+      }
     }
     const mealIdx = cells.findIndex((c) => MEAL_SLOT[c]);
     if (mealIdx < 0 || currentDateKey == null) return;
@@ -100,7 +105,21 @@ function parseTableRows($) {
     }
     days[currentDateKey][slot] = items;
   });
+  applyMenuClosedFlags(days);
   return withDowKeys(days);
+}
+
+/** MM-DD 날짜에 점심·저녁 식단이 모두 없으면 휴무 플래그 */
+function applyMenuClosedFlags(days) {
+  for (const key of Object.keys(days)) {
+    if (!/^\d{2}-\d{2}$/.test(key)) continue;
+    const entry = days[key];
+    if (!entry || typeof entry !== 'object') continue;
+    const hasLunch = Array.isArray(entry.l) && entry.l.length > 0;
+    const hasDinner = Array.isArray(entry.d) && entry.d.length > 0;
+    if (!hasLunch && !hasDinner) entry.closed = true;
+  }
+  return days;
 }
 
 /** MM-DD 날짜 키 데이터를 요일(0~6) 키로도 미러링 (가장 최근 날짜 우선) */
