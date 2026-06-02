@@ -1570,6 +1570,7 @@ function mealOpenRef(baseRef, mealPeriod) {
 
 function isOpen(key, period, refDate) {
   const ref = refDate || (typeof KST !== 'undefined' ? KST.now() : new Date());
+  if (typeof SchoolCalendar !== 'undefined' && SchoolCalendar.isNoSchoolDay(ref)) return false;
   const dow = ref.getDay();
   if (dow === 0 || dow === 6) return false;
   const t = kstTimeFloat(ref);
