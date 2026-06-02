@@ -2386,7 +2386,7 @@ function drawFood() {
     const menus = showMenus ? getMenus(def.key, mealMode, menuDayOff) : [];
     const walk = base.도보분 ?? CampusDistance.walkToRest(fromKey, def.key);
     const back = base.복귀분 ?? CampusDistance.walkRestToBuilding(def.key, nextKey);
-    const congBase = base.혼잡도 || getDynamicCrowd(def.key);
+    const congBase = base.혼잡도 || (cardState === 'before_open' ? getDynamicCrowd(def.key, (() => { const r = new Date(nowRef); r.setHours(12, 30, 0, 0); return r; })()) : getDynamicCrowd(def.key));
     const liveCong = cardState === 'operating' ? getDynamicCrowd(def.key) : congBase;
     const liveWait = cardState === 'dinner_soon' ? 0 : waitMin(liveCong);
     const effectiveWait = cardState === 'operating' || cardState === 'before_open' || cardState === 'tomorrow'
