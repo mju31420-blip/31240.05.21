@@ -109,15 +109,21 @@ function parseTableRows($) {
   return withDowKeys(days);
 }
 
-/** MM-DD 날짜에 점심·저녁 식단이 모두 없으면 휴무 플래그 */
+const CLOSED_LUNCH_MENU_RE = /휴무|미운영|휴관|선거/;
+
+function isLunchMenuClosed(entry) {
+  const lunch = Array.isArray(entry?.l) ? entry.l : [];
+  if (!lunch.length) return true;
+  return lunch.every((item) => CLOSED_LUNCH_MENU_RE.test(String(item?.n ?? '')));
+}
+
+/** MM-DD 날짜: 점심 없음 또는 점심이 휴무·미운영·휴관·선거 문구만 있으면 휴무 플래그 */
 function applyMenuClosedFlags(days) {
   for (const key of Object.keys(days)) {
     if (!/^\d{2}-\d{2}$/.test(key)) continue;
     const entry = days[key];
     if (!entry || typeof entry !== 'object') continue;
-    const hasLunch = Array.isArray(entry.l) && entry.l.length > 0;
-    const hasDinner = Array.isArray(entry.d) && entry.d.length > 0;
-    if (!hasLunch && !hasDinner) entry.closed = true;
+    if (isLunchMenuClosed(entry)) entry.closed = true;
   }
   return days;
 }
