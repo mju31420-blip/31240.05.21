@@ -572,7 +572,7 @@ async function fetchWeather() {
 }
 fetchWeather();
 setInterval(fetchWeather, 30 * 60 * 1000);
-if (typeof SchoolCalendar !== 'undefined') SchoolCalendar.load().then(() => drawFood && drawFood());
+if (typeof SchoolCalendar !== 'undefined') SchoolCalendar.load().then(() => { if (lastData && typeof buildAndRender === 'function') buildAndRender(lastData.현재건물키, lastData.현재위치, lastData.다음수업, lastData.공강분, lastData.mealIntent?.period || mealMode || 'lunch', { analyzeSource: lastData.analyzeSource, mealIntent: lastData.mealIntent, nextKey: lastData.nextKey, scheduleMeta: lastData.scheduleMeta, aiComment: lastData.총평 }); else if (typeof drawFood === 'function') drawFood(); });
 
 /* ════════════════════════════ TABS ════ */
 function goTab(id, btn) {
@@ -2139,6 +2139,7 @@ function buildAndRender(cur, curTxt, nxtTxt, gapMin, period, extra = {}) {
     drawFood();
   }, 50);
 }
+window.buildAndRender = buildAndRender;
 
 function buildTomorrow(cur, period) {
   const mult2 = (PMULT[period] || 1) * 1.1;
