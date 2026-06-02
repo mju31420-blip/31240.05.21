@@ -1377,6 +1377,7 @@ async function applyScheduleAnalysis(rawApi, sourceLabel = '분석', options = {
   const period = mealIntent.period || (ref.getHours() >= 17 ? 'dinner' : 'lunch');
   const scheduleMeta = { ...data.scheduleMeta, gapSource: analyzeSource };
   const comment = buildScheduleComment(data.curKey, data.nextKey, data.gapMin, mealIntent, scheduleMeta);
+  if (typeof SchoolCalendar !== 'undefined') await SchoolCalendar.load();
   buildAndRender(data.curKey, data.curTxt, data.nextTxt, data.gapMin, period, {
     analyzeSource,
     mealIntent,
@@ -1987,6 +1988,7 @@ async function doAnalyze() {
   const mealIntent = MealEngine.computeMealIntent(gapMin, ref);
   const period = mealIntent.period;
   const scheduleMeta = { gapSource: 'manual', timeline: [], warnings: [] };
+  if (typeof SchoolCalendar !== 'undefined') await SchoolCalendar.load();
   buildAndRender(cur, curTxt, nxtTxt, gapMin, period, {
     analyzeSource: 'manual',
     mealIntent,
