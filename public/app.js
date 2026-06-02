@@ -2533,7 +2533,7 @@ function drawFood() {
   wrap.innerHTML = foodOcrBanner + shortGapBanner;
 
   ordered.forEach((row, idx) => {
-    const { key, e, n, st, menus, walk, back, wait, total, margin, cardState, hoursText, tier, infeasible } = row;
+    const { key, e, n, st, menus, walk, back, wait, total, margin, cardState, hoursText, tier, infeasible, base } = row;
     const isClosed = cardState === 'closed';
     const isPick = idx === 0 && cardState === 'operating' && tier === 0 && !infeasible && st !== 'bad';
     if (isPick) {
@@ -2543,7 +2543,7 @@ function drawFood() {
 
     const card = document.createElement('div');
     card.className = 'rc-card' + (isPick ? ' rc-card--pick' : '') + (isClosed ? ' rc-card--closed' : '');
-    card.innerHTML = buildRestaurantCardHtml(
+    let cardHtml = buildRestaurantCardHtml(
       { key, e, n, st, menus, walk, back, wait, total, margin, cardState },
       {
         gapMin,
@@ -2554,6 +2554,13 @@ function drawFood() {
         hoursText,
       },
     );
+    if (dayMode === 'tomorrow' && base?.상태 === 'closed' && base?.배지 === '휴무') {
+      cardHtml = cardHtml.replace(
+        '<span class="rc-badge rc-badge--closed">운영 종료</span>',
+        '<span class="rc-badge rc-badge--closed">휴무</span>',
+      );
+    }
+    card.innerHTML = cardHtml;
     wrap.appendChild(card);
   });
 
