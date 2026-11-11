@@ -280,7 +280,7 @@ function safeHttpUrl(value) {
   return /^https?:\/\//i.test(url) ? escapeHtml(url) : '#';
 }
 
-/** API·JSON은 MM-DD 날짜 키와 요일 키를 모두 보존 */
+/** 식당 카드에는 날짜가 확인된 공식 식단만 사용 */
 function normalizeMenusPayload(raw) {
   const src = raw && typeof raw === 'object' ? raw : {};
   const out = {};
@@ -301,23 +301,14 @@ function normalizeMenusPayload(raw) {
     const base = restaurantSrc?.days && typeof restaurantSrc.days === 'object' ? restaurantSrc.days : restaurantSrc;
     if (!base || typeof base !== 'object') return days;
     for (const [dk, slots] of Object.entries(base)) {
-      if (/^\d{2}-\d{2}$/.test(dk)) {
-        days[dk] = normalizeDaySlots(slots);
-        continue;
-      }
-      if (!/^\d+$/.test(dk)) continue;
-      const dow = Number(dk);
-      if (Number.isNaN(dow) || dow < 0 || dow > 6) continue;
-      days[dow] = normalizeDaySlots(slots);
+      if (/^\d{2}-\d{2}$/.test(dk)) days[dk] = normalizeDaySlots(slots);
     }
     return days;
   }
 
   for (const key of MENU_RESTAURANT_KEYS) {
-    if (src[key] != null) out[key] = normalizeDays(src[key]);
-  }
-  for (const [key, val] of Object.entries(src)) {
-    if (!out[key]) out[key] = normalizeDays(val);
+    const days = normalizeDays(src[key]);
+    if (Object.keys(days).length) out[key] = days;
   }
   return out;
 }
@@ -336,44 +327,15 @@ function menuRefDate(dayOffset = 0) {
   return target;
 }
 
-function getNearestDateKeyData(restaurantDays, ref) {
-  const refTime = ref.getTime();
-  const year = ref.getFullYear();
-  let best = null;
-  let bestDiff = Infinity;
-  for (const key of Object.keys(restaurantDays)) {
-    const m = /^(\d{2})-(\d{2})$/.exec(key);
-    if (!m) continue;
-    const mm = Number(m[1]);
-    const dd = Number(m[2]);
-    for (const y of [year - 1, year, year + 1]) {
-      const diff = Math.abs(new Date(y, mm - 1, dd).getTime() - refTime);
-      if (diff < bestDiff) {
-        bestDiff = diff;
-        best = restaurantDays[key];
-      }
-    }
-  }
-  return best;
-}
-
-function isMenuDateClosed(key, refOrOffset = 1) {
-  const restaurantDays = MENUS[key];
-  if (!restaurantDays) return false;
-  const ref = refOrOffset instanceof Date ? refOrOffset : menuRefDate(Number(refOrOffset) || 0);
-  const dateKey = menuDateKey(ref);
-  return restaurantDays[dateKey]?.closed === true;
+function isMenuDateClosed(key, period, date) {
+  const day = getMenuDayData(MENUS[key], date);
+  return day?.closed === true && (period === 'lunch' || !day.d?.length);
 }
 
 function getMenuDayData(restaurantDays, refOrOffset = 0) {
   if (!restaurantDays) return null;
   const ref = refOrOffset instanceof Date ? refOrOffset : menuRefDate(Number(refOrOffset) || 0);
-  const dateKey = menuDateKey(ref);
-  if (restaurantDays[dateKey]) return restaurantDays[dateKey];
-  const dow = ref.getDay();
-  const dowData = restaurantDays[dow] ?? restaurantDays[String(dow)];
-  if (dowData) return dowData;
-  return getNearestDateKeyData(restaurantDays, ref) ?? null;
+  return restaurantDays[menuDateKey(ref)] ?? null;
 }
 
 /* ════════════════════════════ CAMPUS SCHEDULE / CROWD ════ */
@@ -509,21 +471,21 @@ async function loadMenus(refresh = false) {
     if (!data.ok) throw new Error(data.error || '식단 API 오류');
     MENUS = normalizeMenusPayload(data.MENUS || {});
     menuMeta.updatedAt = data.updatedAt;
-    menuMeta.ready = MENU_RESTAURANT_KEYS.some((k) => Object.keys(MENUS[k] || {}).length > 0);
+    menuMeta.ready = MENU_RESTAURANT_KEYS.every((key) => Boolean(MENUS[key]));
     console.log(
       '[loadMenus] restaurants',
       MENU_RESTAURANT_KEYS.map((k) => ({
         key: k,
         dayKeys: Object.keys(MENUS[k] || {}),
-        todayLunch: getMenuDayData(MENUS[k], menuDayIndex(0))?.l?.length ?? 0,
+        todayLunch: getMenuDayData(MENUS[k])?.l?.length ?? 0,
       })),
     );
-    if (lastData) drawFood();
   } catch (e) {
     showToast('공식 식단을 불러오지 못했어요');
     console.error(e);
   } finally {
     menuMeta.loading = false;
+    if (lastData) drawFood();
   }
 }
 
@@ -631,16 +593,12 @@ function setDay(m) {
     return;
   }
   if (m === 'tomorrow') {
-    const rebuildTomorrow = () => {
-      lastData.내일 = buildTomorrow(
-        lastData.현재건물키,
-        lastData.mealIntent?.period || mealMode || 'lunch',
-      );
+    const renderTomorrow = () => {
       drawFood();
       finishShuttle();
     };
-    if (typeof SchoolCalendar !== 'undefined') SchoolCalendar.load().then(rebuildTomorrow);
-    else rebuildTomorrow();
+    if (typeof SchoolCalendar !== 'undefined') SchoolCalendar.load().then(renderTomorrow);
+    else renderTomorrow();
     return;
   }
   drawFood();
@@ -1480,18 +1438,12 @@ function waitMin(c) {
   return c <= 30 ? 5 : c <= 55 ? 12 : c <= 70 ? 20 : c <= 83 ? 28 : 36;
 }
 
-const RESTAURANT_HOURS_LABEL = {
-  기숙사: '점심 11:30~13:30 · 저녁 17:00~18:30',
-  학생회관: '점심 11:00~14:00',
-  명진당: '점심 11:30~14:30 (월~목) · 11:30~14:00 (금)',
-  교직원: '점심 12:50~13:30 · 저녁 17:30~18:30',
-};
-
+// 학교 공식 주간 식단 페이지에 게시된 운영시간
 const RESTAURANT_WINDOWS = {
   기숙사: { lunch: { start: 11.5, end: 13.5 }, dinner: { start: 17, end: 18.5 } },
-  학생회관: { lunch: { start: 11, end: 14 } },
-  명진당: { lunch: { start: 11.5, end: 14.5, friEnd: 14 } },
-  교직원: { lunch: { start: 12 + 50 / 60, end: 13.5 }, dinner: { start: 17.5, end: 18.5 } },
+  학생회관: { lunch: { start: 10, end: 15 } },
+  명진당: { lunch: { start: 11, end: 14.5 } },
+  교직원: { lunch: { start: 11.5, end: 13.5 }, dinner: { start: 17.5, end: 18.5 } },
 };
 
 function fmtHourFloat(h) {
@@ -1502,25 +1454,20 @@ function fmtHourFloat(h) {
 
 function getMealWindow(key, period, dow) {
   if (dow === 0 || dow === 6) return null;
-  const cfg = RESTAURANT_WINDOWS[key];
-  if (!cfg) return null;
-  const win = cfg[period];
-  if (!win) return null;
-  if (period === 'lunch' && key === '명진당' && dow === 5) {
-    return { start: win.start, end: win.friEnd ?? win.end };
-  }
-  return { start: win.start, end: win.end };
+  return RESTAURANT_WINDOWS[key]?.[period] ?? null;
 }
 
 function formatMealWindowLabel(key, period, dow) {
   const win = getMealWindow(key, period, dow);
   if (!win) return '';
-  const slot = period === 'dinner' ? '저녁' : '점심';
+  const slot = period === 'dinner' ? '저녁' : key === '명진당' ? '백반' : '점심';
   return `${slot} ${fmtHourFloat(win.start)}~${fmtHourFloat(win.end)}`;
 }
 
 function formatOperatingHoursText(key) {
-  return RESTAURANT_HOURS_LABEL[key] || '운영 시간 정보 없음';
+  const hours = ['lunch', 'dinner'].map((period) => formatMealWindowLabel(key, period, 1)).filter(Boolean);
+  if (key === '명진당') hours.push('샐러드·볶음밥 11:00~16:00');
+  return hours.join(' · ') || '운영 시간 정보 없음';
 }
 
 function getRestaurantCardState(key, period, refDate, dayMode) {
@@ -1536,7 +1483,7 @@ function getRestaurantCardState(key, period, refDate, dayMode) {
     return { state: 'tomorrow', ref: tomorrowRef, dow: twDow };
   }
 
-  if (isNoSchoolDay(ref) && key === '기숙사') return { state: 'closed' };
+  if (key !== '교직원' && isNoSchoolDay(ref)) return { state: 'closed' };
 
   const dow = ref.getDay();
   const window = getMealWindow(key, period, dow);
@@ -1599,33 +1546,10 @@ function mealOpenRef(baseRef, mealPeriod) {
 
 function isOpen(key, period, refDate) {
   const ref = refDate || (typeof KST !== 'undefined' ? KST.now() : new Date());
-  if (typeof SchoolCalendar !== 'undefined' && SchoolCalendar.isNoSchoolDay(ref) && key === '기숙사') {
-    return false;
-  }
-  const dow = ref.getDay();
-  if (dow === 0 || dow === 6) return false;
+  if (key !== '교직원' && isNoSchoolDay(ref)) return false;
+  const window = getMealWindow(key, period, ref.getDay());
   const t = kstTimeFloat(ref);
-
-  if (key === '기숙사') {
-    if (period === 'lunch') return t >= 11.5 && t < 13.5;
-    if (period === 'dinner') return t >= 17 && t < 18.5;
-    return false;
-  }
-  if (key === '학생회관') {
-    if (period === 'dinner') return false;
-    return t >= 11 && t < 14;
-  }
-  if (key === '명진당') {
-    if (period === 'dinner') return false;
-    if (dow === 5) return t >= 11.5 && t < 14;
-    return t >= 11.5 && t < 14.5;
-  }
-  if (key === '교직원') {
-    if (period === 'lunch') return t >= 12 + 50 / 60 && t < 13.5;
-    if (period === 'dinner') return t >= 17.5 && t < 18.5;
-    return false;
-  }
-  return false;
+  return Boolean(window && t >= window.start && t < window.end);
 }
 
 /** 메뉴명 → 요리 종류 (중복 가능, 구체적 태그 우선) */
@@ -1983,13 +1907,8 @@ function menuDayIndex(dayOffset = 0) {
 function getMenus(key, period, dayOffset = null) {
   const offset = dayOffset !== null ? dayOffset : dayMode === 'tomorrow' ? 1 : 0;
   const slot = period === 'dinner' ? 'd' : 'l';
-  const restaurantDays = MENUS[key];
-  if (!restaurantDays) return [];
-  const dayData = getMenuDayData(restaurantDays, offset) || {};
-  let raw = dayData[slot] || [];
-  if (!raw.length && period === 'dinner' && (key === '명진당' || key === '학생회관')) {
-    raw = dayData.l?.length ? dayData.l : dayData.b || [];
-  }
+  const dayData = getMenuDayData(MENUS[key], offset);
+  const raw = slot === 'l' && dayData?.closed ? [] : dayData?.[slot] || [];
   return raw.map((m) => ({
     name: m.n,
     tag: isMatch(m.n) ? 'match' : m.t || '없음',
@@ -2077,7 +1996,7 @@ function buildAndRender(cur, curTxt, nxtTxt, gapMin, period, extra = {}) {
       총소요: trip.total,
       혼잡도: cong,
       추천여부: false,
-      메뉴: getMenus(key, period),
+      메뉴: getMenus(key, period, 0),
       trip,
     };
   }
@@ -2193,7 +2112,7 @@ function buildTomorrow(cur, period) {
       };
       return;
     }
-    if (isMenuDateClosed(key, tomorrowRef)) {
+    if (isMenuDateClosed(key, period, tomorrowRef)) {
       식당[key] = {
         상태: 'closed',
         배지: '휴무',
@@ -2329,7 +2248,7 @@ function rcStatusBadgeHtml(cardState, isPick, st, crowdLbl, rankIdx) {
 
 function buildRestaurantCardHtml(row, ctx) {
   const { e, n, st, menus, walk, back, wait, total, margin, cardState } = row;
-  const { gapMin, mealMin, isPick, instaUrl, rankIdx, hoursText } = ctx;
+  const { gapMin, mealMin, isPick, instaUrl, weeklyMenuUrl, rankIdx, hoursText, menuAvailable } = ctx;
   const crowdLbl = crowdBadgeLabel(st);
   const badge = rcStatusBadgeHtml(cardState, isPick, st, crowdLbl, rankIdx);
   const nameCls = cardState === 'closed' ? ' rc-hd-name--muted' : '';
@@ -2343,9 +2262,23 @@ function buildRestaurantCardHtml(row, ctx) {
     instaUrl
       ? `<a class="rc-insta" href="${safeHttpUrl(instaUrl)}" target="_blank" rel="noopener noreferrer">📸 인스타 보기</a>`
       : '';
+  const weeklyMenu = `<a class="rc-insta" href="${safeHttpUrl(weeklyMenuUrl)}" aria-label="${escapeHtml(n)} 공식 주간 식단" target="_blank" rel="noopener noreferrer">📋 주간 식단</a>`;
+  const links = `<div class="rc-links">${insta}${weeklyMenu}</div>`;
+
+  const menuItems = [
+    ...menus.filter((m) => m.tag === 'match'),
+    ...menus.filter((m) => m.tag !== 'match'),
+  ].slice(0, 4).map((m) => {
+    const taste = m.tag === 'match' ? '<span class="rc-menu-match">취향</span>' : '';
+    return `<div class="rc-menu-item"><span>${escapeHtml(m.name)}</span>${taste}</div>`;
+  }).join('');
+  const menuMessage = menuAvailable
+    ? '선택한 끼니의 공식 식단이 등록되지 않았어요.'
+    : '공식 식단을 불러오지 못했어요. 주간 식단에서 확인해 주세요.';
+  const menuBlock = `<div class="rc-menus">${menuItems || `<div class="rc-menu-empty">${menuMessage}</div>`}</div>`;
 
   if (cardState === 'closed') {
-    return `${header}<div class="rc-body rc-body--closed"><div class="rc-hours">${escapeHtml(hoursText)}</div>${insta}</div>`;
+    return `${header}<div class="rc-body rc-body--closed"><div class="rc-hours">${escapeHtml(hoursText)}</div>${menuBlock}${links}</div>`;
   }
 
   const roundTrip = walk + back;
@@ -2371,28 +2304,14 @@ function buildRestaurantCardHtml(row, ctx) {
     </div>`;
   }
 
-  let menuBlock;
-  if (!menus.length) {
-    menuBlock = '<div class="rc-menus"><div class="rc-menu-empty">주말 식단 미제공</div></div>';
-  } else {
-    const matchMs = menus.filter((m) => m.tag === 'match');
-    const sortedM = [...matchMs, ...menus.filter((m) => m.tag !== 'match')];
-    const items = sortedM
-      .slice(0, 4)
-      .map((m) => {
-        const taste = m.tag === 'match' ? '<span class="rc-menu-match">취향</span>' : '';
-        return `<div class="rc-menu-item"><span>${escapeHtml(m.name)}</span>${taste}</div>`;
-      })
-      .join('');
-    menuBlock = `<div class="rc-menus">${items}</div>`;
-  }
-
-  return `${header}<div class="rc-body"><div class="rc-hours">${escapeHtml(hoursText)}</div>${timeGrid}${marginRow}${menuBlock}${insta}</div>`;
+  return `${header}<div class="rc-body"><div class="rc-hours">${escapeHtml(hoursText)}</div>${timeGrid}${marginRow}${menuBlock}${links}</div>`;
 }
 
 function drawFood() {
   if (!lastData) return;
-  const src = dayMode === 'today' ? lastData.오늘 : lastData.내일;
+  const isTomorrow = dayMode === 'tomorrow';
+  if (isTomorrow) lastData.내일 = buildTomorrow(lastData.현재건물키, mealMode);
+  const src = isTomorrow ? lastData.내일 : lastData.오늘;
   if (!src?.식당) return;
 
   drawAltFood();
@@ -2400,7 +2319,7 @@ function drawFood() {
     dayMode === 'tomorrow' && lastData.내일?.예측 ? `<div class="pred-chip">🔮 내일 예측 — ${escapeHtml(lastData.내일.예측)}</div>` : '';
 
   const deliveryWrap = document.getElementById('deliveryWrap');
-  if (!menuMeta.ready) {
+  if (menuMeta.loading && !Object.keys(MENUS).length) {
     document.getElementById('rcWrap').innerHTML =
       '<p style="text-align:center;color:var(--sub);font-size:12px;padding:20px">공식 식단 불러오는 중…</p>';
     if (deliveryWrap) deliveryWrap.innerHTML = '';
@@ -2415,6 +2334,12 @@ function drawFood() {
     명진당: 'https://www.instagram.com/mju_lounge/',
     교직원: 'https://www.instagram.com/mj_bangmok_foodist/',
     학생회관: 'https://www.instagram.com/mjhs_yongin/',
+  };
+  const WEEKLY_MENU = {
+    기숙사: 'https://www.mju.ac.kr/mjukr/487/subview.do',
+    명진당: 'https://www.mju.ac.kr/mjukr/485/subview.do',
+    교직원: 'https://www.mju.ac.kr/mjukr/488/subview.do',
+    학생회관: 'https://www.mju.ac.kr/mjukr/486/subview.do',
   };
   const DEFS = [
     { key: '기숙사', e: '🏠', n: '기숙사식당 (복지동)' },
@@ -2443,8 +2368,7 @@ function drawFood() {
       if (base.상태 === 'closed') cardState = 'closed';
     }
     const isClosed = cardState === 'closed';
-    const showMenus = !isClosed;
-    const menus = showMenus ? getMenus(def.key, mealMode, menuDayOff) : [];
+    const menus = getMenus(def.key, mealMode, menuDayOff);
     const walk = base.도보분 ?? CampusDistance.walkToRest(fromKey, def.key);
     const back = base.복귀분 ?? CampusDistance.walkRestToBuilding(def.key, nextKey);
     const congBase = base.혼잡도 || (cardState === 'before_open' ? getDynamicCrowd(def.key, (() => { const r = new Date(nowRef); const win = getMealWindow(def.key, 'lunch', r.getDay()); if (win) { const h = Math.floor(win.start); r.setHours(h, Math.round((win.start - h) * 60), 0, 0); } else { r.setHours(12, 30, 0, 0); } return r; })()) : getDynamicCrowd(def.key));
@@ -2550,8 +2474,10 @@ function drawFood() {
         mealMin: MEAL,
         isPick,
         instaUrl: INSTA[key],
+        weeklyMenuUrl: WEEKLY_MENU[key],
         rankIdx: idx,
         hoursText,
+        menuAvailable: Boolean(MENUS[key]),
       },
     );
     if (dayMode === 'tomorrow' && base?.상태 === 'closed' && base?.배지 === '휴무') {
@@ -2571,10 +2497,24 @@ function drawFood() {
   setTimeout(() => document.getElementById('fbBox').classList.add('on'), 400);
 }
 
-/* ════════════════════════════ 셔틀 실시간 (2026-1학기 공식표) ════ */
+/* ════════════════════════════ 셔틀 실시간 (2026-2학기 공식표) ════ */
+const SHUTTLE_NOTICE_URL = 'https://www.mju.ac.kr/bbs/mjukr/141/234852/artclView.do';
+const SHUTTLE_TERM_START = new Date(2026, 8, 1);
+const SHUTTLE_TERM_END = new Date(2026, 11, 15); // 12월 14일까지 운행
 const SHUTTLE_ROUTE_STOPS = {
-  entranceMyeongji: ['캠퍼스', '이마트', '상공회의소', '역북동행정복지센터', '명지대역'],
-  sinae: ['캠퍼스', '용인CGV', '중앙공영주차장', '명지대역'],
+  entranceMyeongji: [
+    '버스관리사무소(채플관 앞)', '이마트·상공회의소 앞', '역북동행정복지센터 건너편', '명지대역 사거리',
+    '역북동행정복지센터 앞', '이마트·상공회의소 건너편', '명진당', '제3공학관',
+  ],
+  sinae: [
+    '버스관리사무소(채플관 앞)', '이마트·상공회의소 앞', '역북동행정복지센터 건너편', '동부경찰서 중앙지구대 앞',
+    '용인 CGV', '중앙공영주차장 앞', '역북동행정복지센터 앞', '이마트·상공회의소 건너편', '제1공학관', '제3공학관',
+  ],
+  holidaySinae: [
+    '생활관(명현관)', '함박관', '정문', '이마트·상공회의소 앞', '역북동행정복지센터 건너편', '동부경찰서 중앙지구대 앞',
+    '용인 CGV', '중앙공영주차장 앞', '명지대역 사거리', '역북동행정복지센터 앞', '이마트·상공회의소 건너편',
+    '제1공학관', '생활관(명현관)',
+  ],
 };
 
 function formatShuttleRoute(stops) {
@@ -2595,17 +2535,13 @@ function formatShuttleRoutePath(text) {
 }
 
 const SHUTTLE_ROUTES = {
-  giheung: '기흥역 ↔ 캠퍼스 (진입로)',
+  giheung: '기흥역 5번 출구 ↔ 자연캠퍼스',
   entranceMyeongji: formatShuttleRoute(SHUTTLE_ROUTE_STOPS.entranceMyeongji),
   entranceSinae: formatShuttleRoute(SHUTTLE_ROUTE_STOPS.sinae),
-  city: formatShuttleRoute(SHUTTLE_ROUTE_STOPS.sinae),
+  holidaySinae: formatShuttleRoute(SHUTTLE_ROUTE_STOPS.holidaySinae),
 };
 
-function getEntranceRouteForType(type) {
-  return type === '시내' ? SHUTTLE_ROUTES.entranceSinae : SHUTTLE_ROUTES.entranceMyeongji;
-}
-
-function renderShuttleRouteHtml(kind) {
+function renderShuttleRouteHtml(kind, date = getShuttleViewDate()) {
   if (kind === 'entrance') {
     return `<div class="sh-route">
       <div class="sh-route-row"><span class="sh-route-tag">명지대역</span><span class="sh-route-path">${formatShuttleRoutePath(SHUTTLE_ROUTES.entranceMyeongji)}</span></div>
@@ -2613,25 +2549,36 @@ function renderShuttleRouteHtml(kind) {
     </div>`;
   }
   if (kind === 'city') {
-    return `<div class="sh-route"><div class="sh-route-row"><span class="sh-route-path">${formatShuttleRoutePath(SHUTTLE_ROUTES.city)}</span></div></div>`;
+    const route = isNoSchoolDay(date) ? SHUTTLE_ROUTES.holidaySinae : SHUTTLE_ROUTES.entranceSinae;
+    return `<div class="sh-route"><div class="sh-route-row"><span class="sh-route-path">${formatShuttleRoutePath(route)}</span></div></div>`;
   }
   return `<div class="sh-route"><div class="sh-route-row"><span class="sh-route-path">${formatShuttleRoutePath(SHUTTLE_ROUTES.giheung)}</span></div></div>`;
 }
 
-const GIHEUNG_SCHEDULE = {
-  /** 캠퍼스 도착 (기흥역 출발 +15분) */
-  arriveCampus: ['08:30', '08:35', '09:30', '09:35', '10:30', '10:35', '12:30', '13:30', '14:30', '15:45', '16:45', '17:45', '18:45', '19:45'],
-  /** 학교 출발 → 기흥역 */
-  schoolDepart: ['09:05', '09:10', '10:05', '10:10', '12:00', '13:00', '14:00', '15:15', '16:15', '17:15', '18:15', '19:15'],
-  limit18: '18:00 이후 기흥역 셔틀은 명진당까지만 운행',
-  travelMin: 15,
-};
+/** 학교 출발, 기흥역 5번 출구 도착·출발, 학교 도착 순 */
+const GIHEUNG_TRIPS = [
+  [null, '08:15', '08:30'],
+  [null, '08:20', '08:35'],
+  ['09:05', '09:15', '09:30'],
+  ['09:10', '09:20', '09:35'],
+  ['10:00', '10:15', '10:30'],
+  ['10:05', '10:20', '10:35'],
+  ['12:00', '12:15', '12:30'],
+  ['13:00', '13:15', '13:30'],
+  ['14:00', '14:15', '14:30'],
+  ['15:15', '15:30', '15:45'],
+  ['16:15', '16:30', '16:45'],
+  ['17:15', '17:30', '17:45'],
+  ['18:15', '18:30', '18:45'],
+  ['19:15', '19:30', null],
+];
 
-/** 시내 셔틀 — 학교 출발 10회/일 */
-const CITY_SHUTTLE_SCHEDULE = {
-  schoolDepart: ['08:20', '09:20', '10:20', '11:20', '12:20', '13:20', '15:20', '16:20', '17:20', '18:00'],
-  limit18: '18:00 이후 시내버스는 제1공학관까지만 운행',
-  travelMin: 25,
+const GIHEUNG_SCHEDULE = {
+  schoolDepart: GIHEUNG_TRIPS
+    .filter(([school]) => school)
+    .map(([school, station]) => ({ t: school, arrive: station })),
+  arrivalLabel: '기흥역 도착',
+  notice: '12:30까지 기흥역 출발, 13:00부터 학교 출발을 우선합니다. 만차 시 먼저 출발할 수 있습니다.',
 };
 
 /** 진입로 셔틀 — 학교(버스관리사무소) 출발, 명지대역/시내 */
@@ -2702,8 +2649,23 @@ const ENTRANCE_SHUTTLE_SCHEDULE = {
     { t: '19:30', type: '명지대역' },
     { t: '20:00', type: '시내' },
   ],
-  limit18: '18:00 이후 진입로 셔틀은 명진당까지만 운행',
+  arrivalLabel: '진입로 경유',
+  limit18: '18:00 이후 명지대역 노선은 명진당, 시내 노선은 제1공학관까지만 운행합니다.',
+  notice: '평일 08:30~10:50, 15:00~17:30에는 명지대역↔명진당 구간을 추가 운행합니다.',
   travelMin: 15,
+};
+
+const CITY_SHUTTLE_SCHEDULE = {
+  schoolDepart: ENTRANCE_SHUTTLE_SCHEDULE.schoolDepart.filter(({ type }) => type === '시내'),
+  arrivalLabel: ENTRANCE_SHUTTLE_SCHEDULE.arrivalLabel,
+  limit18: '18:00 이후 시내 셔틀은 제1공학관까지만 운행합니다.',
+  travelMin: ENTRANCE_SHUTTLE_SCHEDULE.travelMin,
+};
+
+const HOLIDAY_CITY_SHUTTLE_SCHEDULE = {
+  schoolDepart: ['08:20', '09:20', '10:20', '11:20', '12:20', '13:20', '15:20', '16:20', '17:20', '18:00'],
+  arrivalLabel: '학교 도착',
+  travelMin: 25,
 };
 
 function shTimeToMin(t) {
@@ -2760,58 +2722,39 @@ function buildShuttleUpcomingList(events, nowM, streamMoving = false) {
 
 const SHUTTLE_DOW_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
 
-function getWeekendShuttleReturn(schedule) {
-  const now = getKstNow();
-  const dow = now.getDay();
-  const isHoliday =
-    typeof SchoolCalendar !== 'undefined' && SchoolCalendar.isHoliday && SchoolCalendar.isHoliday(now);
-  if (dow !== 0 && dow !== 6 && !isHoliday) return null;
-  const tomorrow = (dow + 1) % 7;
-  const isWeekday = tomorrow >= 1 && tomorrow <= 5;
+function getShuttleViewDate(isTomorrow = dayMode === 'tomorrow') {
+  const date = new Date(getKstNow());
+  if (isTomorrow) date.setDate(date.getDate() + 1);
+  return date;
+}
+
+function getShuttleSchedule(kind, date) {
+  if (kind === 'giheung') return GIHEUNG_SCHEDULE;
+  if (kind === 'entrance') return ENTRANCE_SHUTTLE_SCHEDULE;
+  return isNoSchoolDay(date) ? HOLIDAY_CITY_SHUTTLE_SCHEDULE : CITY_SHUTTLE_SCHEDULE;
+}
+
+function getShuttleUnavailable(schedule, date, isTomorrow) {
+  const outsideTerm = date < SHUTTLE_TERM_START || date >= SHUTTLE_TERM_END;
+  if (!outsideTerm && (!isNoSchoolDay(date) || schedule === HOLIDAY_CITY_SHUTTLE_SCHEDULE)) return null;
   return {
-    statusText: isWeekday
-      ? `주말 미운행 · 내일(${SHUTTLE_DOW_NAMES[tomorrow]}요일) 첫차 08:15 출발 예정`
-      : '주말·공휴일 미운행',
+    statusText: outsideTerm ? '2학기 운행표 적용 기간 외' : '주말·공휴일 미운행',
     statusCls: 'bad',
     upcoming: [],
     after18: false,
-    limit18: schedule?.limit18 || '',
-    hint: '주말·공휴일에는 학기중 통학버스가 운행하지 않습니다.',
-    isTomorrow: false,
+    hint: outsideTerm
+      ? '2학기 공식표는 2026년 9월 1일~12월 14일 기준입니다.'
+      : schedule === ENTRANCE_SHUTTLE_SCHEDULE
+        ? '명지대역 사거리는 공휴일 시내 셔틀이 경유합니다.'
+        : '',
+    isTomorrow,
   };
-}
-
-function getTomorrowViewWeekendReturn(schedule, viewDow) {
-  const tomorrow = new Date(getKstNow());
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const isHoliday =
-    typeof SchoolCalendar !== 'undefined' && SchoolCalendar.isHoliday && SchoolCalendar.isHoliday(tomorrow);
-  if (viewDow !== 0 && viewDow !== 6 && !isHoliday) return null;
-  const dayAfter = (viewDow + 1) % 7;
-  const isWeekday = dayAfter >= 1 && dayAfter <= 5;
-  return {
-    statusText: isWeekday
-      ? `주말·공휴일 미운행 · ${SHUTTLE_DOW_NAMES[dayAfter]}요일 첫차 08:15 출발 예정`
-      : '주말·공휴일 미운행',
-    statusCls: 'bad',
-    upcoming: [],
-    after18: false,
-    limit18: schedule?.limit18 || '',
-    hint: '주말·공휴일에는 학기중 통학버스가 운행하지 않습니다.',
-    isTomorrow: true,
-  };
-}
-
-function buildShuttleTomorrowFullList(events) {
-  return [...events]
-    .sort((a, b) => a.depM - b.depM)
-    .map((ev) => ({ ...ev, isPast: false, isTomorrow: true, remain: 0, hl: false }));
 }
 
 function getShuttleCongestionHint() {
   const dow = getKstNow().getDay();
   const nowM = getKstMinutes();
-  if (isNoSchoolDay(getKstNow())) return '주말·공휴일은 학기중 셔틀 미운행입니다.';
+  if (isNoSchoolDay(getKstNow())) return '';
   if (dow === 4 || dow === 5) {
     if (nowM >= 14 * 60 && nowM < 18 * 60) {
       return '📌 목·금 오후는 공강·하교가 겹쳐 승차 대기 15~25분 예상될 수 있어요.';
@@ -2823,29 +2766,31 @@ function getShuttleCongestionHint() {
   return '';
 }
 
-/** 학교 출발 기준 셔틀 분석 */
-function analyzeSchoolDepart(schedule, opts = {}) {
-  const nowM = getKstMinutes();
-  const travel = schedule.travelMin || 15;
-  const dow = getKstNow().getDay();
-  const weekend = getWeekendShuttleReturn(schedule);
-  if (weekend) return weekend;
-
-  const raw = schedule.schoolDepart || [];
-  const events = raw.map((item) => {
+function getSchoolDepartEvents(schedule, defaultType) {
+  return schedule.schoolDepart.map((item) => {
     const time = typeof item === 'string' ? item : item.t;
-    const type = typeof item === 'string' ? opts.defaultType || '셔틀' : item.type;
+    const type = item.type || defaultType;
     const depM = shTimeToMin(time);
+    const arrive = item.arrive || shMinToStr(depM + schedule.travelMin);
     return {
       depart: time,
       depM,
-      arrM: depM + travel,
-      arrive: shMinToStr(depM + travel),
+      arrM: shTimeToMin(arrive),
+      arrive,
       type,
-      kind: opts.kindLabel || '하교',
+      kind: '하교',
     };
-  });
-  events.sort((a, b) => a.depM - b.depM);
+  }).sort((a, b) => a.depM - b.depM);
+}
+
+/** 학교 출발 기준 셔틀 분석 */
+function analyzeSchoolDepart(schedule, defaultType) {
+  const nowM = getKstMinutes();
+  const unavailable = getShuttleUnavailable(schedule, getShuttleViewDate(false), false);
+  if (unavailable) return unavailable;
+
+  const events = getSchoolDepartEvents(schedule, defaultType);
+  const arrivalLabel = schedule.arrivalLabel;
 
   let statusText = '오늘 운행 종료 🔴';
   let statusCls = 'bad';
@@ -2855,7 +2800,7 @@ function analyzeSchoolDepart(schedule, opts = {}) {
     if (nowM >= ev.depM && nowM < ev.arrM) {
       moving = true;
       statusCls = 'warn';
-      statusText = `현재 캠퍼스발 버스 이동 중 — 약 ${ev.arrM - nowM}분 후 ${opts.destLabel || '목적지'} 도착 예상 (${ev.type})`;
+      statusText = `현재 캠퍼스발 버스 이동 중 — 약 ${ev.arrM - nowM}분 후 ${arrivalLabel} 예정 (${ev.type})`;
       break;
     }
   }
@@ -2883,6 +2828,7 @@ function analyzeSchoolDepart(schedule, opts = {}) {
     statusCls,
     upcoming,
     after18,
+    arrivalLabel,
     limit18: schedule.limit18,
     hint: getShuttleCongestionHint(),
     events,
@@ -2891,56 +2837,22 @@ function analyzeSchoolDepart(schedule, opts = {}) {
   };
 }
 
-function analyzeSchoolDepartTomorrow(schedule, opts = {}) {
-  const travel = schedule.travelMin || 15;
-  const viewDow = (getKstNow().getDay() + 1) % 7;
-  const weekend = getTomorrowViewWeekendReturn(schedule, viewDow);
-  if (weekend) return weekend;
-  const events = (schedule.schoolDepart || []).map((item) => {
-    const time = typeof item === 'string' ? item : item.t;
-    const type = typeof item === 'string' ? opts.defaultType || '셔틀' : item.type;
-    const depM = shTimeToMin(time);
-    return {
-      depart: time,
-      depM,
-      arrM: depM + travel,
-      arrive: shMinToStr(depM + travel),
-      type,
-      kind: opts.kindLabel || '하교',
-    };
-  });
-  events.sort((a, b) => a.depM - b.depM);
-  const first = events[0];
-  return {
-    statusText: first ? `내일 첫차 ${first.depart} 출발 예정` : '내일 운행 시간표 확인',
-    statusCls: 'ok',
-    upcoming: buildShuttleTomorrowFullList(events),
-    after18: false,
-    limit18: schedule.limit18,
-    hint: '',
-    isTomorrow: true,
-  };
+function getGiheungArrivalEvents() {
+  return GIHEUNG_TRIPS.filter(([, , campus]) => campus).map(([, station, campus]) => ({
+    depart: station,
+    depM: shTimeToMin(station),
+    arrM: shTimeToMin(campus),
+    arrive: campus,
+    type: '기흥역발',
+    kind: '등교',
+  }));
 }
 
 function analyzeGiheungShuttle() {
   const nowM = getKstMinutes();
-  const travel = GIHEUNG_SCHEDULE.travelMin;
-  const weekend = getWeekendShuttleReturn(GIHEUNG_SCHEDULE);
-  if (weekend) return weekend;
-
-  const toCampus = GIHEUNG_SCHEDULE.arriveCampus.map((arr) => {
-    const arrM = shTimeToMin(arr);
-    const depM = arrM - travel;
-    return {
-      depart: shMinToStr(depM),
-      depM,
-      arrM,
-      arrive: arr,
-      type: '기흥역발',
-      kind: '등교',
-      remain: 0,
-    };
-  });
+  const unavailable = getShuttleUnavailable(GIHEUNG_SCHEDULE, getShuttleViewDate(false), false);
+  if (unavailable) return unavailable;
+  const toCampus = getGiheungArrivalEvents();
 
   let statusText = '다음 등교·하교 버스를 확인하세요';
   let statusCls = 'ok';
@@ -2955,10 +2867,7 @@ function analyzeGiheungShuttle() {
     }
   }
 
-  const school = analyzeSchoolDepart(
-    { schoolDepart: GIHEUNG_SCHEDULE.schoolDepart, travelMin: travel, limit18: GIHEUNG_SCHEDULE.limit18 },
-    { defaultType: '기흥역행', destLabel: '기흥역', kindLabel: '하교' },
-  );
+  const school = analyzeSchoolDepart(GIHEUNG_SCHEDULE, '기흥역행');
 
   if (!moving && school.statusText.includes('분 후')) {
     statusText = school.statusText;
@@ -2969,9 +2878,6 @@ function analyzeGiheungShuttle() {
       const remain = nextIn.depM - nowM;
       statusText = `다음 등교 버스 ${remain}분 후 기흥역 출발 → 캠퍼스 ${nextIn.arrive} 도착`;
       statusCls = remain <= 12 ? 'warn' : 'ok';
-    } else if (school.statusCls !== 'bad') {
-      statusText = school.statusText;
-      statusCls = school.statusCls;
     } else {
       statusText = school.statusText;
       statusCls = school.statusCls;
@@ -2984,53 +2890,42 @@ function analyzeGiheungShuttle() {
 
   return {
     statusText,
-    statusCls: moving ? 'warn' : school.statusCls,
+    statusCls,
     upcoming,
-    after18: nowM >= shTimeToMin('18:00'),
-    limit18: GIHEUNG_SCHEDULE.limit18,
+    arrivalLabel: GIHEUNG_SCHEDULE.arrivalLabel,
     hint: getShuttleCongestionHint(),
     isTomorrow: false,
   };
 }
 
-function analyzeGiheungShuttleTomorrow() {
-  const travel = GIHEUNG_SCHEDULE.travelMin;
-  const viewDow = (getKstNow().getDay() + 1) % 7;
-  const weekend = getTomorrowViewWeekendReturn(GIHEUNG_SCHEDULE, viewDow);
-  if (weekend) return weekend;
-  const toCampus = GIHEUNG_SCHEDULE.arriveCampus.map((arr) => {
-    const arrM = shTimeToMin(arr);
-    const depM = arrM - travel;
-    return {
-      depart: shMinToStr(depM),
-      depM,
-      arrM,
-      arrive: arr,
-      type: '기흥역발',
-      kind: '등교',
-    };
-  });
-  const schoolEvents = GIHEUNG_SCHEDULE.schoolDepart.map((t) => {
-    const depM = shTimeToMin(t);
-    return {
-      depart: t,
-      depM,
-      arrM: depM + travel,
-      arrive: shMinToStr(depM + travel),
-      type: '기흥역행',
-      kind: '하교',
-    };
-  });
-  const allEvents = [...toCampus, ...schoolEvents];
-  const firstArr = GIHEUNG_SCHEDULE.arriveCampus[0];
-  const firstDep = firstArr ? shMinToStr(shTimeToMin(firstArr) - travel) : '08:15';
+function analyzeShuttlePlan(kind, date, departureTime, direction) {
+  const schedule = getShuttleSchedule(kind, date);
+  const unavailable = getShuttleUnavailable(schedule, date, true);
+  if (unavailable) return unavailable;
+
+  const toCampus = kind === 'giheung' && direction === 'arrive';
+  const events = toCampus
+    ? getGiheungArrivalEvents()
+    : getSchoolDepartEvents(schedule, kind === 'giheung' ? '기흥역행' : '시내행');
+  const first = events[0].depart;
+  const last = events[events.length - 1].depart;
+  const departurePlace = toCampus ? '기흥역' : '학교';
+  const departureMin = departureTime ? shTimeToMin(departureTime) : null;
+  const upcoming = departureMin === null ? [] : events.filter((event) => event.depM >= departureMin).slice(0, 3);
+  const noLaterTrip = departureMin !== null && !upcoming.length;
+  let statusText = `${departurePlace} 출발 · 첫차 ${first} · 막차 ${last}`;
+  if (departureMin !== null) {
+    statusText = noLaterTrip
+      ? `${departureTime} 이후 ${departurePlace} 출발편 없음 · 막차 ${last}`
+      : `${departureTime} 이후 ${departurePlace} 출발`;
+  }
   return {
-    statusText: `내일 첫차 ${firstDep} 출발 예정`,
-    statusCls: 'ok',
-    upcoming: buildShuttleTomorrowFullList(allEvents),
-    after18: false,
-    limit18: GIHEUNG_SCHEDULE.limit18,
-    hint: '',
+    statusText,
+    statusCls: noLaterTrip ? 'bad' : 'ok',
+    upcoming,
+    arrivalLabel: schedule.arrivalLabel,
+    after18: upcoming.some((event) => event.depM >= 18 * 60),
+    limit18: schedule.limit18,
     isTomorrow: true,
   };
 }
@@ -3041,34 +2936,39 @@ function renderShuttleCard(containerId, title, route, analysis, modalKind) {
   const bc = analysis.statusCls === 'ok' ? 'bdg-g' : analysis.statusCls === 'bad' ? 'bdg-r' : 'bdg-o';
   const shcCls = analysis.statusCls === 'ok' ? 'shc-ok' : analysis.statusCls === 'bad' ? 'shc-bad' : 'shc-warn';
   const upTitle = analysis.isTomorrow
-    ? '📅 내일 전체 시간표'
+    ? '📅 내일 출발 예정'
     : '⏱ 직전·2시간 이내 (학교 출발·도착 기준)';
   const upHtml = analysis.upcoming.length
     ? `<div class="sh-upcoming"><div style="font-weight:700;color:var(--navy);margin-bottom:6px">${upTitle}</div>${analysis.upcoming
         .map((u) => {
           const label = u.kind === '등교' ? `기흥역 ${u.depart} → 캠퍼스 ${u.arrive}` : `학교 ${u.depart} 출발 · ${u.type || ''}`;
+          const arrivalLabel = u.kind === '등교' ? '캠퍼스 도착' : analysis.arrivalLabel;
           if (analysis.isTomorrow) {
-            return `<div class="sh-up-row"><span>${label}</span><span>도착 ${u.arrive}</span></div>`;
+            const departLabel = u.kind === '등교' ? `기흥역 ${u.depart} 출발` : label;
+            return `<div class="sh-up-row"><span>${departLabel}</span><span>${arrivalLabel} 예정 ${u.arrive}</span></div>`;
           }
           if (u.isPast) {
             return `<div class="sh-up-row past"><span>${label}</span><span class="sh-past-lbl">지난 버스</span></div>`;
           }
-          const timeLbl = u.isMoving ? `<b>이동 중 · ${u.remain}분 후 도착</b>` : `<b>${u.remain}분 후</b>`;
+          const timeLbl = u.isMoving ? `<b>이동 중 · ${u.remain}분 후 ${arrivalLabel}</b>` : `<b>${u.remain}분 후</b>`;
           return `<div class="sh-up-row${u.hl ? ' hl' : ''}"><span>${label}</span><span>${timeLbl}</span></div>`;
         })
         .join('')}</div>`
-    : `<div class="sh-upcoming" style="color:var(--sub)">${analysis.isTomorrow ? '내일 운행 시간표 없음' : '2시간 이내 예정 버스 없음'}</div>`;
+    : analysis.isTomorrow ? '' : '<div class="sh-upcoming" style="color:var(--sub)">2시간 이내 예정 버스 없음</div>';
   const hintHtml = analysis.hint ? `<div class="sh-limit" style="color:#1e40af;background:#eff6ff;border-color:#bfdbfe">${analysis.hint}</div>` : '';
+  const badges = analysis.isTomorrow
+    ? { ok: '운행 예정', bad: '예정편 없음' }
+    : { ok: '원활', bad: '운행 종료', warn: '혼잡 주의' };
 
   const routeHtml = modalKind ? renderShuttleRouteHtml(modalKind) : `<div style="font-size:11px;color:var(--muted);margin-bottom:6px">📍 ${route}</div>`;
   el.innerHTML = `<div class="shc ${shcCls} on" style="margin-bottom:12px">
     <div class="sh-in">
-      <div class="sh-hd"><div class="sh-name">${title}</div><span class="bdg ${bc}">${analysis.statusCls === 'ok' ? '원활' : analysis.statusCls === 'bad' ? '운행 종료' : '혼잡 주의'}</span></div>
+      <div class="sh-hd"><div class="sh-name">${title}</div><span class="bdg ${bc}">${badges[analysis.statusCls]}</span></div>
       ${routeHtml}
-      <div class="sh-desc"><b>🚌 현재 버스 상태</b><br>${analysis.statusText}</div>
+      <div class="sh-desc"><b>${analysis.isTomorrow ? '🚌 내일 운행 안내' : '🚌 현재 버스 상태'}</b><br>${analysis.statusText}</div>
       ${hintHtml}
       ${upHtml}
-      ${analysis.after18 ? `<div class="sh-limit">⚠️ ${analysis.limit18}</div>` : ''}
+      ${analysis.after18 && analysis.limit18 ? `<div class="sh-limit">⚠️ ${analysis.limit18}</div>` : ''}
       <button type="button" class="btn-sh-sched" onclick="openShuttleModal('${modalKind}')">📋 전체 시간표 보기</button>
     </div>
   </div>`;
@@ -3077,33 +2977,28 @@ function renderShuttleCard(containerId, title, route, analysis, modalKind) {
 function drawShuttle() {
   const n = getKstNow();
   const kstEl = document.getElementById('shKstNow');
-  const dayLbl = dayMode === 'tomorrow' ? '내일 예측' : '오늘 실시간';
-  const viewDow = dayMode === 'tomorrow' ? (n.getDay() + 1) % 7 : n.getDay();
+  const isTomorrow = dayMode === 'tomorrow';
+  const viewDate = getShuttleViewDate(isTomorrow);
+  const viewDow = viewDate.getDay();
   if (kstEl) {
-    kstEl.textContent = `${dayLbl} · ${SHUTTLE_DOW_NAMES[viewDow]} ${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')} KST`;
+    kstEl.textContent = isTomorrow
+      ? `내일 시간표 · ${viewDate.getMonth() + 1}/${viewDate.getDate()} (${SHUTTLE_DOW_NAMES[viewDow]})`
+      : `오늘 실시간 · ${SHUTTLE_DOW_NAMES[viewDow]} ${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')} KST`;
   }
-  let gi, ent, city;
-  if (dayMode === 'tomorrow') {
-    gi = analyzeGiheungShuttleTomorrow();
-    ent = analyzeSchoolDepartTomorrow(ENTRANCE_SHUTTLE_SCHEDULE, {
-      defaultType: '진입로',
-      destLabel: '명지대역·시내',
-    });
-    city = analyzeSchoolDepartTomorrow(CITY_SHUTTLE_SCHEDULE, {
-      defaultType: '시내행',
-      destLabel: '용인 시내',
-    });
-  } else {
-    gi = analyzeGiheungShuttle();
-    ent = analyzeSchoolDepart(ENTRANCE_SHUTTLE_SCHEDULE, {
-      defaultType: '진입로',
-      destLabel: '명지대역·시내',
-    });
-    city = analyzeSchoolDepart(CITY_SHUTTLE_SCHEDULE, {
-      defaultType: '시내행',
-      destLabel: '용인 시내',
-    });
-  }
+  const planner = document.getElementById('shPlan');
+  if (planner) planner.hidden = !isTomorrow;
+  const departureTime = document.getElementById('shPlanTime')?.value || '';
+  const direction = document.getElementById('shPlanDirection')?.value || 'arrive';
+  const clearButton = document.getElementById('shPlanClear');
+  if (clearButton) clearButton.disabled = !departureTime;
+
+  const gi = isTomorrow ? analyzeShuttlePlan('giheung', viewDate, departureTime, direction) : analyzeGiheungShuttle();
+  const ent = isTomorrow
+    ? analyzeShuttlePlan('entrance', viewDate, departureTime)
+    : analyzeSchoolDepart(ENTRANCE_SHUTTLE_SCHEDULE);
+  const city = isTomorrow
+    ? analyzeShuttlePlan('city', viewDate, departureTime)
+    : analyzeSchoolDepart(getShuttleSchedule('city', viewDate), '시내행');
   renderShuttleCard('shGiheung', '🚌 기흥역 통학버스', SHUTTLE_ROUTES.giheung, gi, 'giheung');
   renderShuttleCard('shEntrance', '🚏 진입로 셔틀', '학교 출발 · 명지대역·시내', ent, 'entrance');
   renderShuttleCard('shSinae', '🚍 시내 셔틀', '학교 출발 · 용인 시내', city, 'city');
@@ -3125,6 +3020,14 @@ function drawShuttle() {
   }
 }
 
+function clearShuttlePlanTime() {
+  const input = document.getElementById('shPlanTime');
+  if (!input) return;
+  input.value = '';
+  drawShuttle();
+  input.focus();
+}
+
 let shModalKind = 'giheung';
 let shModalTab = 'arrive';
 
@@ -3138,6 +3041,9 @@ function renderGiheungModalTabs() {
 function openShuttleModal(kind) {
   shModalKind = kind;
   shModalTab = kind === 'giheung' ? 'arrive' : 'depart';
+  if (kind === 'giheung' && dayMode === 'tomorrow') {
+    shModalTab = document.getElementById('shPlanDirection')?.value || 'arrive';
+  }
   const modal = document.getElementById('shModal');
   const tabs = document.getElementById('shModalTabs');
   const title = document.getElementById('shModalTitle');
@@ -3167,95 +3073,40 @@ function closeShuttleModal() {
 function renderShuttleModalBody() {
   const body = document.getElementById('shModalBody');
   if (!body) return;
+  const isTomorrow = dayMode === 'tomorrow';
+  const date = getShuttleViewDate(isTomorrow);
+  const schedule = getShuttleSchedule(shModalKind, date);
+  const route = renderShuttleRouteHtml(shModalKind, date);
+  const source = `<p class="sh-limit"><a href="${SHUTTLE_NOTICE_URL}" target="_blank" rel="noopener noreferrer">학교 공식 운행 안내</a></p>`;
+  const unavailable = getShuttleUnavailable(schedule, date, isTomorrow);
+  if (unavailable) {
+    body.innerHTML = `${route}<p class="sh-limit">${unavailable.statusText} ${unavailable.hint}</p>${source}`;
+    return;
+  }
+
+  const isGiheung = shModalKind === 'giheung';
+  const isCampusArrival = isGiheung && shModalTab === 'arrive';
+  const rows = isCampusArrival
+    ? getGiheungArrivalEvents()
+    : getSchoolDepartEvents(schedule, isGiheung ? '기흥역행' : '시내행');
+  const arrivalLabel = isCampusArrival ? '캠퍼스 도착' : schedule.arrivalLabel;
+  const departLabel = isCampusArrival ? '기흥역' : '학교';
   const nowM = getKstMinutes();
-  let rows = [];
+  const firstUp = isTomorrow ? null : rows.find((row) => row.depM > nowM);
+  const schedRows = rows.map((row) => {
+    const left = `${row.type} · ${row.depart} ${departLabel} 출발`;
+    const right = `${arrivalLabel} ${row.arrive}`;
+    if (!isTomorrow && row.arrM <= nowM) {
+      return `<div class="sched-row past"><div><span>${left}</span></div><span class="sh-past-lbl">지난 버스 · ${right}</span></div>`;
+    }
+    return `<div class="sched-row${row === firstUp ? ' next' : ''}"><div><span>${left}</span></div><span>${right}</span></div>`;
+  }).join('');
 
-  if (shModalKind === 'giheung') {
-    const travel = GIHEUNG_SCHEDULE.travelMin;
-    const list = shModalTab === 'arrive' ? GIHEUNG_SCHEDULE.arriveCampus : GIHEUNG_SCHEDULE.schoolDepart;
-    rows = list.map((t) => {
-      if (shModalTab === 'arrive') {
-        const arrM = shTimeToMin(t);
-        const depM = arrM - travel;
-        return { depart: shMinToStr(depM), arrive: t, depM, arrM, sub: '기흥역→캠퍼스' };
-      }
-      const depM = shTimeToMin(t);
-      return { depart: t, arrive: shMinToStr(depM + travel), depM, arrM: depM + travel, sub: '학교→기흥역' };
-    });
-  } else if (shModalKind === 'entrance') {
-    const travel = ENTRANCE_SHUTTLE_SCHEDULE.travelMin;
-    rows = ENTRANCE_SHUTTLE_SCHEDULE.schoolDepart.map((item) => {
-      const depM = shTimeToMin(item.t);
-      return {
-        depart: item.t,
-        arrive: shMinToStr(depM + travel),
-        depM,
-        arrM: depM + travel,
-        sub: item.type,
-        route: getEntranceRouteForType(item.type),
-      };
-    });
-  } else {
-    const travel = CITY_SHUTTLE_SCHEDULE.travelMin;
-    rows = CITY_SHUTTLE_SCHEDULE.schoolDepart.map((t) => {
-      const depM = shTimeToMin(t);
-      return {
-        depart: t,
-        arrive: shMinToStr(depM + travel),
-        depM,
-        arrM: depM + travel,
-        sub: '시내행',
-        route: SHUTTLE_ROUTES.city,
-      };
-    });
-  }
-
-  const routeBlock = renderShuttleRouteHtml(shModalKind);
-  let display;
-  if (dayMode === 'tomorrow') {
-    display = rows
-      .sort((a, b) => a.depM - b.depM)
-      .map((r) => ({ ...r, isPast: false, isMoving: false, next: false }));
-  } else {
-    const sorted = [...rows].sort((a, b) => a.depM - b.depM);
-    const firstUp = sorted.find((r) => r.depM > nowM && !(nowM >= r.depM && nowM < r.arrM));
-    display = sorted.map((r) => ({
-      ...r,
-      isPast: r.arrM <= nowM,
-      isMoving: nowM >= r.depM && nowM < r.arrM,
-      next: firstUp ? r.depM === firstUp.depM : false,
-    }));
-  }
-
-  const schedRows = display.length
-    ? display
-        .map((r) => {
-          const left = `${r.sub ? r.sub + ' · ' : ''}${shModalKind === 'giheung' && shModalTab === 'arrive' ? r.depart + ' 기흥역' : r.depart + ' 학교'} 출발`;
-          const routeLine = r.route ? `<div class="sched-route">${formatShuttleRoutePath(r.route)}</div>` : '';
-          if (r.isPast) {
-            return `<div class="sched-row past"><div><span>${left}</span>${routeLine}</div><span class="sh-past-lbl">지난 버스 · 도착 ${r.arrive}</span></div>`;
-          }
-          return `<div class="sched-row${r.next ? ' next' : ''}"><div><span>${left}</span>${routeLine}</div><span>도착 ${r.arrive}</span></div>`;
-        })
-        .join('')
-    : `<p style="color:var(--sub);font-size:12px;padding:8px 0">${dayMode === 'tomorrow' ? '내일 운행 시간표 없음' : '오늘 남은 운행 시간이 없습니다.'}</p>`;
-
-  const viewDowModal = dayMode === 'tomorrow' ? (getKstNow().getDay() + 1) % 7 : getKstNow().getDay();
-  const weekendNote = [0, 6].includes(viewDowModal)
-    ? '<p class="sh-limit" style="margin-top:0;margin-bottom:10px">주말·공휴일에는 학기중 통학버스가 운행하지 않습니다.</p>'
-    : '';
-
-  body.innerHTML =
-    routeBlock +
-    weekendNote +
-    schedRows +
-    `<p class="sh-limit" style="margin-top:12px">⚠️ ${
-      shModalKind === 'giheung'
-        ? GIHEUNG_SCHEDULE.limit18
-        : shModalKind === 'entrance'
-          ? ENTRANCE_SHUTTLE_SCHEDULE.limit18
-          : CITY_SHUTTLE_SCHEDULE.limit18
-    }</p>`;
+  const notices = [schedule.limit18, schedule.notice]
+    .filter(Boolean)
+    .map((note) => `<p class="sh-limit">${note}</p>`)
+    .join('');
+  body.innerHTML = route + schedRows + notices + source;
 }
 
 const LDM = ['시간표 OCR 분석 중...', '수업 동선 파악 중...', '트래픽 계산 중...', '메뉴 매칭 중...'];

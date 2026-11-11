@@ -294,13 +294,13 @@
 <body>
 
 <div class="gate" id="gate">
-  <div class="gate-box">
+  <form class="gate-box" id="gateForm" method="post">
     <div class="gate-title">🔒 개발자 대시보드</div>
     <div class="gate-desc">시간표 세션·방문 피드백 집계 (메인 앱과 분리)</div>
-    <input class="gate-inp" id="pwIn" type="password" placeholder="비밀번호" autocomplete="off">
-    <button class="gate-btn" type="button" id="pwBtn">입장</button>
-    <div class="gate-err" id="pwErr"></div>
-  </div>
+    <input class="gate-inp" id="pwIn" name="password" type="password" placeholder="비밀번호" aria-label="관리자 비밀번호" autocomplete="current-password" required>
+    <button class="gate-btn" type="submit" id="pwBtn">입장</button>
+    <div class="gate-err" id="pwErr" role="status"></div>
+  </form>
 </div>
 
 <div class="dash" id="dash">
@@ -315,6 +315,7 @@
     </div>
     <div class="topbar-actions">
       <button type="button" class="btn-refresh" id="btnRefresh">↻ 새로고침</button>
+      <button type="button" class="btn-refresh" id="btnLogout">로그아웃</button>
     </div>
   </header>
 
@@ -451,16 +452,17 @@
 </div>
 
 <script type="module">
-  const PASS = '31420';
   const RESTS = ['기숙사', '명진당', '교직원', '학생회관'];
   const chartInstances = [];
   let store = { sessions: [], visits: [] };
-  let dashboardPassword = '';
 
   const gate = document.getElementById('gate');
   const dash = document.getElementById('dash');
   const pwIn = document.getElementById('pwIn');
   const pwErr = document.getElementById('pwErr');
+  const pwBtn = document.getElementById('pwBtn');
+  const btnRefresh = document.getElementById('btnRefresh');
+  const btnLogout = document.getElementById('btnLogout');
 
   /* ── 시간·패턴 유틸 ── */
   function escapeHtml(value) {
@@ -673,40 +675,32 @@
   }
 
   /* ── 대시보드 API ── */
-  async function loadData() {
-    const localVisits = loadLocalVisits();
-    let remoteVisits = [];
-    let remoteSessions = [];
-    let visitErr = null;
-    let sessionErr = null;
-    let visitOk = false;
-    let sessionOk = false;
-
-    const password =
-      dashboardPassword || pwIn.value || sessionStorage.getItem('mb_dash_pw') || '';
-
-    try {
-      const res = await fetch('/api/dashboard', {
-        headers: { 'x-dashboard-password': password },
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.ok) {
-        const msg = body.error || `HTTP ${res.status}`;
-        visitErr = sessionErr = msg;
-      } else {
-        remoteVisits = (body.visits || []).map((d) => normalizeVisit(d));
-        remoteSessions = (body.sessions || []).map((d) => ({ id: d.id, ...normalizeSession(d) }));
-        visitOk = true;
-        sessionOk = true;
-      }
-    } catch (e) {
-      visitErr = sessionErr = e.message;
+  async function requestDashboard(path = '', payload) {
+    const options = { cache: 'no-store' };
+    if (payload) {
+      options.method = 'POST';
+      options.headers = { 'Content-Type': 'application/json' };
+      options.body = JSON.stringify(payload);
     }
+    const res = await fetch('/api/dashboard' + path, options);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.ok) {
+      const error = new Error(body.error || `대시보드 요청에 실패했습니다 (HTTP ${res.status}).`);
+      error.status = res.status;
+      throw error;
+    }
+    return body;
+  }
 
+  async function loadData() {
+    const body = await requestDashboard();
+    const localVisits = loadLocalVisits();
+    const remoteVisits = (body.visits || []).map(normalizeVisit);
+    const remoteSessions = (body.sessions || []).map((d) => ({ id: d.id, ...normalizeSession(d) }));
     const visits = mergeVisits(localVisits, remoteVisits);
     const sessions = dedupeSessions(remoteSessions);
 
-    return { visits, sessions, localVisits, remoteVisits, remoteSessions, visitOk, sessionOk, visitErr, sessionErr };
+    return { visits, sessions, localVisits, remoteVisits, remoteSessions };
   }
 
   /* ── 렌더 ── */
@@ -974,9 +968,6 @@
   }
 
   async function boot() {
-    document.getElementById('loadMsg').style.display = 'block';
-    document.getElementById('dashBody').style.display = 'none';
-
     const data = await loadData();
     store = { sessions: data.sessions, visits: data.visits };
 
@@ -998,16 +989,14 @@
       warn.style.display = 'block';
       warn.innerHTML =
         '데이터가 없습니다. 메인 앱에서 <b>시간표 분석</b> 후 <b>방문 완료</b>를 남기면 Firestore에 쌓입니다.';
-      if (data.visitErr || data.sessionErr) warn.innerHTML += `<br><br><small>Firestore: ${escapeHtml(data.sessionErr || data.visitErr)}</small>`;
-    } else if ((data.sessionErr || data.visitErr) && !data.remoteSessions.length) {
-      warn.style.display = 'block';
-      warn.textContent = `Firestore 세션을 불러오지 못했습니다 (${data.sessionErr || data.visitErr}). 방문 로컬만 있을 수 있습니다.`;
     } else {
       warn.style.display = 'none';
     }
 
-    document.getElementById('dashBody').style.display = hasData || data.remoteSessions.length === 0 ? 'block' : 'none';
-    if (hasData || !data.remoteSessions.length) renderAll();
+    document.getElementById('dashBody').style.display = 'block';
+    gate.style.display = 'none';
+    dash.classList.add('on');
+    renderAll();
   }
 
   /* ── 탭·로그인 ── */
@@ -1020,33 +1009,57 @@
     document.getElementById('panel-' + btn.dataset.tab).classList.add('on');
   });
 
-  document.getElementById('btnRefresh').onclick = () => boot();
+  function showGate(message) {
+    if (dash.classList.contains('on')) {
+      store = { sessions: [], visits: [] };
+      renderAll();
+      document.getElementById('srcPills').replaceChildren();
+    }
+    dash.classList.remove('on');
+    gate.style.display = '';
+    pwErr.textContent = message;
+  }
 
-  function tryLogin() {
-    if (pwIn.value === PASS) {
-      dashboardPassword = pwIn.value;
-      sessionStorage.setItem('mb_dash_ok', '1');
-      sessionStorage.setItem('mb_dash_pw', pwIn.value);
-      gate.style.display = 'none';
-      dash.classList.add('on');
-      boot();
-      pwErr.textContent = '';
-    } else {
-      pwErr.textContent = '비밀번호가 올바르지 않습니다.';
+  async function runDashboardAction(action, initial = false) {
+    if (pwBtn.disabled) return;
+    pwBtn.disabled = btnRefresh.disabled = btnLogout.disabled = true;
+    pwErr.textContent = '';
+    try {
+      await action();
+    } catch (error) {
+      if (dash.classList.contains('on') && error.status !== 401) {
+        const warning = document.getElementById('warnBox');
+        warning.style.display = 'block';
+        warning.textContent = error.message;
+      } else {
+        showGate(initial && error.status === 401 ? '' : error.message);
+      }
+    } finally {
+      pwBtn.disabled = btnRefresh.disabled = btnLogout.disabled = false;
     }
   }
 
-  document.getElementById('pwBtn').onclick = tryLogin;
-  pwIn.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') tryLogin();
+  document.getElementById('gateForm').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const password = pwIn.value;
+    pwIn.value = '';
+    void runDashboardAction(async () => {
+      await requestDashboard('/login', { password });
+      await boot();
+    });
+  });
+  btnRefresh.onclick = () => runDashboardAction(boot);
+  btnLogout.onclick = () => runDashboardAction(async () => {
+    await requestDashboard('/logout', {});
+    showGate('로그아웃했습니다.');
   });
 
-  if (sessionStorage.getItem('mb_dash_ok') === '1') {
-    dashboardPassword = sessionStorage.getItem('mb_dash_pw') || '';
-    gate.style.display = 'none';
-    dash.classList.add('on');
-    boot();
-  }
+  // 이전 버전이 브라우저에 남긴 비밀번호와 로그인 플래그 제거
+  try {
+    sessionStorage.removeItem('mb_dash_pw');
+    sessionStorage.removeItem('mb_dash_ok');
+  } catch {}
+  void runDashboardAction(boot, true);
 </script>
 </body>
 </html>

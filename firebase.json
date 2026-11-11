@@ -31,6 +31,8 @@
       "**/node_modules/**"
     ],
     "rewrites": [
+      { "source": "/api/dashboard", "function": "dashboardApi", "region": "asia-northeast3" },
+      { "source": "/api/dashboard/**", "function": "dashboardApi", "region": "asia-northeast3" },
       { "source": "/api/**", "function": "api", "region": "asia-northeast3" },
       { "source": "/dashboard.html", "destination": "/dashboard.html" },
       { "source": "**", "destination": "/index.html" }

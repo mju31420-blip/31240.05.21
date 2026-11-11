@@ -1,6 +1,5 @@
 import * as cheerio from 'cheerio';
 import { RESTAURANT_SOURCES } from '../config.js';
-import { getSampleMenus } from './sampleMenus.js';
 
 const MEAL_SLOT = { 중식: 'l', 점심: 'l', 조식: 'b', 석식: 'd', 저녁: 'd' };
 
@@ -155,7 +154,6 @@ export async function fetchRestaurantMenus(key) {
 
 export async function fetchAllMenus() {
   const keys = Object.keys(RESTAURANT_SOURCES);
-  const sample = getSampleMenus();
   const results = await Promise.allSettled(keys.map((k) => fetchRestaurantMenus(k)));
   const MENUS = {};
   const errors = [];
@@ -166,13 +164,12 @@ export async function fetchAllMenus() {
       MENUS[key] = r.value.days;
       continue;
     }
-    const msg = r.status === 'rejected' ? r.reason?.message : `${key}: empty menu table`;
-    errors.push(msg || String(r.reason));
-    MENUS[key] = sample[key] || sample.기숙사;
+    const reason = r.status === 'rejected' ? r.reason?.message || String(r.reason) : 'empty menu table';
+    errors.push(`${key}: ${reason}`);
   }
   return {
     updatedAt: new Date().toISOString(),
-    source: errors.length ? 'sample+fallback' : 'https://www.mju.ac.kr/mjukr/',
+    source: 'https://www.mju.ac.kr/mjukr/',
     MENUS,
     errors,
   };

@@ -247,6 +247,8 @@ html.ob-lock,html.ob-lock body{overflow:hidden}
 .rc-closed-msg{font-size:11px;color:var(--sub);text-align:center;padding:8px 6px;background:#f8fafc;border-radius:8px;line-height:1.4}
 .rc-insta{display:block;width:100%;padding:8px 10px;background:#f1f5f9;border-radius:8px;font-size:11px;font-weight:600;color:var(--navy);text-decoration:none;text-align:center;border:none;font-family:'Noto Sans KR',sans-serif}
 .rc-insta:active{opacity:.85}
+.rc-links{display:flex;flex-wrap:wrap;gap:6px}
+.rc-links .rc-insta{flex:1 1 110px;width:auto}
 .crowd-fb-g{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
 .crowd-fb-btn{padding:10px 6px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11.5px;font-weight:600;cursor:pointer;font-family:'Noto Sans KR',sans-serif;touch-action:manipulation}
 .crowd-fb-btn:active{background:#eff6ff;border-color:var(--blue)}
@@ -350,6 +352,13 @@ html.ob-lock,html.ob-lock body{overflow:hidden}
 .cf-g{background:var(--green)} .cf-o{background:var(--ora)} .cf-r{background:var(--red)}
 .clbl{font-size:10px;color:var(--muted);margin-top:3px;font-family:var(--mono)}
 .sh-upcoming{margin-top:10px;font-size:11.5px;color:var(--muted)}
+.sh-plan{margin-bottom:12px;padding:12px;background:#fff;border:1px solid var(--border);border-radius:12px}
+.sh-plan>label{display:block;margin-bottom:8px;font-size:13px;font-weight:700;color:var(--navy)}
+.sh-plan-controls{display:flex;flex-wrap:wrap;gap:6px}
+.sh-plan-controls :is(input,select,button){min-height:40px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--navy);font:inherit;font-size:13px}
+.sh-plan-controls :is(input,select){flex:1 1 100px;min-width:0}
+.sh-plan-controls button{cursor:pointer}
+.sh-plan-controls button:disabled{opacity:.55;cursor:default}
 .sh-up-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed rgba(0,0,0,.06);font-size:12px}
 .sh-up-row.hl{background:rgba(37,99,235,.08);border-radius:6px;padding:6px 8px;margin:0 -4px;font-weight:700;color:var(--navy)}
 .sh-up-row.past{color:var(--sub);opacity:.85}
@@ -585,7 +594,13 @@ html.ob-lock,html.ob-lock body{overflow:hidden}
           <button class="mb" id="rFood" onclick="setRank('food')">🍽️ 음식·취향</button>
         </div>
         <div class="slbl" id="foodRankLbl">교내 4대 식당 — 균형 추천 순위</div>
-        <div id="rcWrap"></div>
+        <div id="rcWrap">
+          <div class="gate">
+            <div class="gate-ico" aria-hidden="true">🍽️</div>
+            <div class="gate-title">시간표 분석이 필요해요</div>
+            <div class="gate-desc">시간표 탭에서 분석하면<br>거리·대기시간·메뉴 매칭을 한 번에 보여드려요</div>
+          </div>
+        </div>
         <div id="deliveryWrap"></div>
         <div id="altFood" class="alt-food"></div>
         <div class="fb" id="fbBox">
@@ -598,6 +613,17 @@ html.ob-lock,html.ob-lock body{overflow:hidden}
 
     <!-- ═══ 셔틀 탭 ═══ -->
     <div class="pane" id="pane-shuttle">
+      <div class="sh-plan" id="shPlan" hidden>
+        <label for="shPlanTime">몇 시쯤 탈 예정이에요?</label>
+        <div class="sh-plan-controls">
+          <input type="time" id="shPlanTime" oninput="drawShuttle()">
+          <select id="shPlanDirection" aria-label="기흥역 탑승 방향" onchange="drawShuttle()">
+            <option value="arrive">기흥역 등교</option>
+            <option value="depart">기흥역 하교</option>
+          </select>
+          <button type="button" id="shPlanClear" onclick="clearShuttlePlanTime()" disabled>초기화</button>
+        </div>
+      </div>
       <div id="shRes">
         <div class="slbl">실시간 셔틀 · <span id="shKstNow">KST</span></div>
         <div id="shGiheung"></div>

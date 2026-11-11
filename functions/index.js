@@ -1,3 +1,4 @@
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { onRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
 import { initializeApp, getApps } from 'firebase-admin/app';
@@ -78,7 +79,7 @@ app.get(['/api/health', '/health'], (_req, res) => {
   });
 });
 
-/** 기숙사·명진당·교직원·학생회관 — 오늘 점심/저녘 (크롤 실패 시 샘플) */
+/** 기숙사·명진당·교직원·학생회관 — 학교 홈페이지에서 가져온 주간 식단 */
 app.get(['/api/menus', '/menus'], rateLimit({ windowMs: 60 * 1000, max: 60 }), async (req, res) => {
   try {
     const data = await getMenus({ force: req.query.refresh === '1' });
@@ -206,14 +207,6 @@ app.post(['/api/analyze/timetable', '/analyze/timetable'], rateLimit({ windowMs:
   }
 });
 
-const DASHBOARD_PASSWORD = '31420';
-
-function dashboardPasswordOk(req) {
-  const fromHeader = String(req.headers['x-dashboard-password'] || '').trim();
-  const fromBody = String(req.body?.password ?? '').trim();
-  return fromHeader === DASHBOARD_PASSWORD || fromBody === DASHBOARD_PASSWORD;
-}
-
 function firestoreDocToJson(doc) {
   const data = doc.data();
   const row = { id: doc.id, ...data };
@@ -238,8 +231,10 @@ async function loadDashboardCollection(name) {
 }
 
 async function handleDashboard(req, res) {
-  if (!dashboardPasswordOk(req)) {
-    return res.status(401).json({ ok: false, error: '비밀번호가 올바르지 않습니다.' });
+  const token = readDashboardCookie(req);
+  if (!token || !(dashboardSessions.get(token) > Date.now())) {
+    dashboardSessions.delete(token);
+    return res.status(401).json({ ok: false, error: '관리자 로그인이 필요합니다.' });
   }
   try {
     const [visits, sessions] = await Promise.all([
@@ -249,13 +244,84 @@ async function handleDashboard(req, res) {
     res.json({ ok: true, visits, sessions });
   } catch (err) {
     console.error('[api/dashboard]', err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(500).json({ ok: false, error: '대시보드 데이터를 불러오지 못했습니다.' });
   }
 }
 
-/** 대시보드 전용 — Admin SDK로 visits·sessions 조회 (비밀번호 일치 시만) */
-app.get(['/api/dashboard', '/dashboard'], rateLimit({ windowMs: 60 * 1000, max: 30 }), handleDashboard);
-app.post(['/api/dashboard', '/dashboard'], rateLimit({ windowMs: 60 * 1000, max: 30 }), handleDashboard);
+const dashboardPassword = defineSecret('DASHBOARD_ADMIN_PASSWORD');
+const DASHBOARD_SESSION_MS = 4 * 60 * 60 * 1000;
+const DASHBOARD_LOGIN_WINDOW_MS = 5 * 60 * 1000;
+const DASHBOARD_COOKIE = '__session'; // Firebase Hosting에서 Functions로 전달되는 쿠키
+const dashboardCookieOptions = { httpOnly: true, secure: true, sameSite: 'strict', path: '/api/dashboard' };
+// 대시보드는 인스턴스 1개에서 세션과 로그인 실패 횟수를 관리한다.
+const dashboardSessions = new Map();
+let dashboardLoginWindow = { failures: 0, expiresAt: 0 };
+
+function readDashboardCookie(req) {
+  return /(?:^|;\s*)__session=([A-Za-z0-9_-]{43})(?=;|$)/.exec(req.get('cookie') || '')?.[1];
+}
+
+const dashboardApp = express();
+dashboardApp.use((_req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+dashboardApp.use(express.json({ limit: '2kb' }));
+
+dashboardApp.post('/api/dashboard/login', (req, res) => {
+  if (!req.is('application/json')) return res.sendStatus(415);
+  const expected = dashboardPassword.value();
+  if (!expected || expected.trim().length < 16) {
+    return res.status(503).json({ ok: false, error: '관리자 비밀번호 설정을 확인해 주세요.' });
+  }
+  const now = Date.now();
+  if (dashboardLoginWindow.expiresAt <= now) {
+    dashboardLoginWindow = { failures: 0, expiresAt: now + DASHBOARD_LOGIN_WINDOW_MS };
+  }
+  if (dashboardLoginWindow.failures >= 10) {
+    res.set('Retry-After', String(Math.ceil((dashboardLoginWindow.expiresAt - now) / 1000)));
+    return res.status(429).json({ ok: false, error: '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.' });
+  }
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  const actualHash = createHash('sha256').update(password).digest();
+  const expectedHash = createHash('sha256').update(expected).digest();
+  if (!timingSafeEqual(actualHash, expectedHash)) {
+    dashboardLoginWindow.failures += 1;
+    return res.status(401).json({ ok: false, error: '비밀번호가 올바르지 않습니다.' });
+  }
+
+  dashboardLoginWindow.failures = 0;
+  dashboardSessions.delete(readDashboardCookie(req));
+  for (const [token, expiresAt] of dashboardSessions) {
+    if (expiresAt <= now) dashboardSessions.delete(token);
+  }
+  if (dashboardSessions.size >= 20) dashboardSessions.delete(dashboardSessions.keys().next().value);
+  const token = randomBytes(32).toString('base64url');
+  dashboardSessions.set(token, now + DASHBOARD_SESSION_MS);
+  res.cookie(DASHBOARD_COOKIE, token, { ...dashboardCookieOptions, maxAge: DASHBOARD_SESSION_MS });
+  return res.json({ ok: true });
+});
+
+dashboardApp.post('/api/dashboard/logout', (req, res) => {
+  if (!req.is('application/json')) return res.sendStatus(415);
+  dashboardSessions.delete(readDashboardCookie(req));
+  res.clearCookie(DASHBOARD_COOKIE, dashboardCookieOptions);
+  return res.json({ ok: true });
+});
+
+dashboardApp.get('/api/dashboard', handleDashboard);
+
+export const dashboardApi = onRequest(
+  {
+    invoker: 'public',
+    secrets: [dashboardPassword],
+    timeoutSeconds: 120,
+    memory: '512MiB',
+    maxInstances: 1,
+    region: 'asia-northeast3',
+  },
+  dashboardApp,
+);
 
 /** Hosting rewrite: /api/** → 이 함수 (경로 그대로 전달) */
 function applySecrets() {
